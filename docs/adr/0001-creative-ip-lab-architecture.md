@@ -10,7 +10,7 @@ The app is a private product lab for early creative ideas. Users can create proj
 
 The first example is a typeface project based on photos and notes about a physical object. The app should also support other product ideas later.
 
-The assignment requires:
+The first version should include:
 
 - login / authorization
 - data persistence
