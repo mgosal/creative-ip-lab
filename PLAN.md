@@ -6,7 +6,7 @@ Build a private product lab where users can take an early creative idea, add sou
 
 The first example project is a typeface. A user starts with a loose idea, photos of an object, and notes about what they see in it. The app helps them move from that raw material toward a type system, glyph plan, artifacts, previews, and eventually a font release.
 
-See [Example Project: Object Typeface](EXAMPLE_TYPEFACE_PROJECT.md).
+See [Example Project: Object Typeface](docs/concept/object-typeface.md).
 
 ## Product Shape
 
