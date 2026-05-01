@@ -14,91 +14,98 @@ The app has two surfaces:
 
 1. Showcase surface
    - Shows selected previews, reviewable artifacts, and items ready for feedback.
+   - Allows unauthenticated visitors to comment on showcase assets.
    - Does not expose raw project material or studio work.
+   - Does not allow Codex refinement while the project is in showcase.
 
 2. Studio surface
    - Requires login.
    - Lets authorized users create and work on projects.
-   - Stores project source material, notes, generated outputs, Codex runs, and review history.
-   - Supports multiple users working on the same project.
-   - Lets users shelve an idea, return to it later, or start a new experiment.
+   - Stores project source material, notes, generated outputs, Codex runs, comments, and review history.
+   - Lets the owner move a project between studio and showcase states.
+   - Allows Codex refinement only while the project is in studio.
 
-## Core Flow
+## Implemented Flow
 
-1. User logs in.
-2. User creates a project by answering: "What are we creating today?"
-3. User describes the idea in plain language.
-4. The app asks for useful source material based on the idea, such as photos, notes, audio, meeting records, or other artifacts.
-5. User adds initial material.
-6. Codex starts a first guidance pass from the project description and initial material.
-7. Codex returns a high-level project plan, useful questions, and next useful actions.
-8. The app saves the Codex response as part of the project history.
-9. User reviews the guidance, clarifies the idea, and keeps adding material.
-10. Codex continues to educate the user as the project develops.
-11. The user can shelve the project at any point if the idea is not coming to life.
-12. When the project reaches a useful review point, the app helps produce something an SME can try quickly.
+1. User logs in with the seeded demo account.
+2. User creates a blank project or imports Project Zero / Project 1 source material.
+3. User adds notes, context drops, files, or source summaries.
+4. User runs `Guide Project`.
+5. Codex returns a high-level project plan, useful questions, source material suggestions, a path, and one next action.
+6. The app saves the Codex response as part of the project history.
+7. User can answer the guidance questions through the continuation form and run another guidance pass.
+8. User generates metallic SVG type specimens for the current typeface path.
+9. User adds comments to individual assets, including optional reference attachments.
+10. User runs `Refine Artifact` on a studio asset.
+11. Codex returns structured critique plus a generated SVG asset.
+12. The app validates and stores the SVG revision as a new artifact and links it from the source asset timeline.
+13. User can move the project to showcase for feedback. Showcase comments remain available, but Codex refinement is locked until the project returns to studio.
 
-## First Codex Use
+## Codex Actions
 
-The first programmatic Codex action should be broad enough to work for a typeface project, but not locked only to typefaces. It should run automatically after the user adds enough initial material for the app to form a useful first response.
-
-Action name:
-
-`Guide Project`
+### Guide Project
 
 Input:
 
 - Project title
-- Project type, if known
+- Project type
 - User's plain-language description
 - Current notes
 - Available artifact summaries
+- Asset comments
+- Recent guidance history
+- Optional follow-up response from the user
 
 Output:
 
 - A short understanding of the idea
 - The likely product direction
+- Visual or product rules
 - Useful questions to ask next
 - Recommended source material to collect
 - A high-level path from idea to working artifact
 - A small next action that can be done now
 
-For a typeface project, Codex may guide the user to collect object photos, identify repeated visual rules, define construction constraints, choose an initial glyph set, and create early specimen tests.
+### Refine Artifact
 
-## Typeface Flow
+Input:
 
-The typeface example should start from observation rather than from font engineering.
+- Project summary
+- Selected asset metadata
+- Selected asset SVG content when available
+- Asset comments
+- Comment attachment metadata and local paths
+- Current project notes
+- Sibling artifact summaries
 
-1. User creates a typeface project.
-2. User uploads or references photos of the source object.
-3. User records notes about what they see in different positions and angles.
-4. Codex helps infer the design rules:
-   - object parts
-   - movement limits
-   - natural angles
-   - possible letterforms
-   - gaps where the object does not naturally map to a glyph
-5. Codex proposes a first glyph plan.
-6. The app stores generated glyph drafts and design notes.
-7. The app should move quickly toward a usable test artifact, such as a web font preview or an installable font file.
-8. Later iterations can add broader glyph coverage, specimen pages, variants, release packaging, and public feedback flows.
+Output:
 
-## Persistence
+- Asset-level understanding
+- Product direction
+- Visual rules or changes
+- Questions
+- Source material suggestions
+- Path
+- Next action
+- `generatedAsset` containing SVG content
 
-Use SQLite for the first version.
+The server validates generated SVG before writing it to disk. It rejects scripts, event handlers, `foreignObject`, JavaScript URLs, and remote image/font references.
 
-Initial data model:
+## Current Persistence
+
+SQLite stores:
 
 - Users
+- Sessions
 - Projects
 - Project collaborators
 - Artifacts
 - Notes
+- Asset comments
+- Asset refinements
 - Codex runs
-- Product previews
-- Published products
 
-Artifacts can start as simple records with metadata and file paths. The implementation can later support photos, audio, transcripts, video, generated SVGs, font files, and specimen pages.
+Local source material, generated SVG files, uploaded files, SQLite data, and private context live outside Git through ignore rules.
 
 ## Authorization
 
@@ -114,71 +121,48 @@ The studio contains early creative IP:
 
 Only authorized users can access studio projects. Showcase viewers can only see items that the studio has chosen to preview, review, or release.
 
-## Experimentation and Feedback
-
-The studio is an experimentation ground.
-
-The app should not assume every idea will become a product. A user can explore an idea, learn from the material, shelve it, and start another project.
-
-When an idea has enough shape, the app should help the user get it into reviewers' hands quickly. For the typeface example, this means a high-priority path to a usable font test, such as an installable font file, a web font, or a specimen page that can be shared for feedback.
-
-Fast feedback matters because subject matter experts are most useful when the question is current. The app should reduce the time between a rough idea and something a reviewer can react to.
-
-## Programmatic Codex Usage
-
-Use the Codex SDK in the app service layer.
-
-The app should call Codex from a controlled workflow:
-
-1. Build a prompt from saved project state.
-2. Call Codex through the SDK.
-3. Require structured output.
-4. Validate the output.
-5. Save the run, input summary, and result.
-6. Show the result to the user.
-
-The app should not execute generated code directly as part of the user session. If Codex later generates code, SVG, font data, or build scripts, those outputs should be stored, validated, previewed, and approved through the app workflow.
+Unauthenticated visitors can comment on showcase assets. They cannot access protected source material or run Codex refinement.
 
 ## Tests
 
-Meaningful first tests:
+Current tests cover:
 
-- Users cannot access studio projects unless authorized.
-- Project records persist in SQLite.
-- Codex run records are saved with input and output.
-- `Guide Project` returns and stores the required structured fields.
-- Showcase previews do not expose protected artifacts.
+- Demo user seeding and project creation
+- Session lookup
+- Studio/showcase separation
+- Structured Codex guide input
+- Guidance history and follow-up input
+- Project Zero specimen generation
+- Login route
+- Guidance continuation route
+- Codex refinement creating a generated artifact
+- Blocking Codex refinement while an owned asset is in showcase
 
-Typeface-specific tests can come later:
+## Completed MVP Cut
 
-- Required glyph records exist for a chosen glyph set.
-- Generated SVGs parse successfully.
-- Font build output is created.
-- Specimen preview renders without missing core glyphs.
+1. Runnable local app.
+2. SQLite persistence.
+3. Login and session handling.
+4. Project creation.
+5. Studio and showcase surfaces.
+6. Material drop and note storage.
+7. Project Zero and Project 1 import paths for local source material.
+8. Generated SVG specimens for the first identified glyphs: N, S, 5, 2, Z, i, W, a, and Q.
+9. `Guide Project` action with structured output, continuation, live Codex path, and local fallback.
+10. `Refine Artifact` action with Codex-generated SVG revision storage.
+11. Asset comments and optional reference attachments.
+12. Tests for the main persistence, auth, guidance, refinement, and showcase rules.
 
-## Implementation Priorities
-
-Current MVP cut:
-
-1. Create a runnable local app skeleton.
-2. Add SQLite persistence.
-3. Add login and session handling.
-4. Add project creation.
-5. Add studio and showcase surfaces.
-6. Add material drop and note storage.
-7. Add a Project Zero import path for local photos and transcript material.
-8. Add generated SVG specimens for the first identified glyphs: N, S, 5, 2, Z, i, W, a, and Q.
-9. Add a `Guide Project` action that saves structured guidance, with a local fallback if the live API call is unavailable.
-10. Add tests for auth, persistence, Codex run storage, specimen generation, and the HTTP login route.
-
-Next implementation steps:
+## Next Implementation Steps
 
 1. Tighten the outbound data policy before sending raw source material to Codex.
-2. Resolve API billing/model access so the live Codex call can replace fallback guidance.
-3. Add broader file upload support for protected source material.
-4. Add a richer typeface workflow for glyph review, iteration, and approvals.
-5. Add fast review outputs for the typeface path.
-6. Add preview and release states.
+2. Add clearer consent and redaction controls around source material and attachment paths.
+3. Add richer file inspection and summarization for photos, transcripts, and references.
+4. Add stronger SVG validation using a parser rather than string checks.
+5. Add explicit version grouping for generated asset revisions.
+6. Add a richer typeface workflow for glyph review, iteration, and approvals.
+7. Add fast review outputs for the typeface path, such as specimen pages, web font previews, or installable font files.
+8. Add preview and release states beyond the current studio/showcase toggle.
 
 ## Demo Goal
 
@@ -187,9 +171,11 @@ The demo should show a user moving from a raw idea to a structured product direc
 For the typeface example:
 
 1. Log in to the studio.
-2. Create a typeface project.
+2. Open or create a typeface project.
 3. Add notes and object references.
-4. Let the app run the first Codex guidance pass.
+4. Run a Codex guidance pass.
 5. Review the generated plan and next actions.
-6. Show that the result is saved.
-7. Show the showcase surface where only selected previews or released artifacts are visible.
+6. Generate SVG specimens.
+7. Add asset comments.
+8. Run Codex refinement and show the generated SVG revision.
+9. Move the project to showcase and show the comment-only feedback surface.

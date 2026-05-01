@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Accepted. Codex runtime details were amended by [ADR 0003](0003-codex-mcp-refinement-workflow.md).
 
 ## Context
 
@@ -19,19 +19,22 @@ The first version should include:
 
 ## Decision
 
-Build the first version as a web app with server-side persistence and Codex SDK integration.
+Build the first version as a web app with server-side persistence and a controlled Codex service boundary.
 
 Use:
 
 - SQLite for local persistence
 - session-based login
 - project-level authorization
-- Codex SDK for programmatic Codex calls
+- Codex MCP / CLI / SDK / Responses fallback paths for programmatic Codex calls
 - structured Codex outputs saved as project history
+- validated generated SVG artifacts for asset refinement
 - a showcase surface for selected preview or release material
 - a studio surface for authorized project work
 
-Codex will be used as a project guide first. The initial app action is `Guide Project`, which takes the saved project state and returns structured guidance, questions, next actions, and a high-level route toward a working artifact.
+Codex is used first as a project guide. The project-level action is `Guide Project`, which takes saved project state and returns structured guidance, questions, next actions, and a high-level route toward a working artifact.
+
+Codex is also used as an asset refiner. The asset-level action is `Refine Artifact`, which takes a selected asset and comments, then returns structured critique plus a generated SVG revision.
 
 ## Rationale
 
@@ -39,21 +42,21 @@ SQLite is enough for the first version and keeps the project easy to run locally
 
 Session login and project collaborators directly support the idea that early creative work is protected IP until the studio chooses to preview, review, or release it.
 
-The Codex SDK is a direct way to show programmatic Codex usage from inside the app. The app controls when Codex is called, what context is sent, how the response is validated, and how the result is stored.
+A controlled Codex service boundary lets the app decide when Codex is called, what context is sent, how the response is validated, and how the result is stored.
 
 Structured Codex output gives the app a reliable contract. The app can render and persist guidance without treating arbitrary generated text or code as trusted execution.
 
 ## Security Position
 
-The app will not execute generated code directly during a user session.
+The app does not execute generated code directly during a user session.
 
-Codex may generate plans, structured data, SVG drafts, font build instructions, code patches, or other artifacts in later iterations. Those outputs must be stored, validated, previewed, and approved before they affect the product.
+Codex can return generated SVG content for asset refinement. The server stores it only after validation. The current validator rejects scripts, event handlers, `foreignObject`, JavaScript URLs, and remote asset references. Stronger parser-based SVG validation remains future work.
 
 The app executes its own built-in actions against validated data. This keeps Codex inside a controlled workflow.
 
 ## Consequences
 
-The first version will focus on the product lab workflow rather than complete font generation.
+The first version focuses on the product lab workflow rather than complete font generation.
 
 The app should support shelved projects. Not every idea needs to become a finished product.
 
@@ -63,12 +66,11 @@ The typeface workflow can grow in layers:
 - source material collection
 - glyph planning
 - SVG draft generation
+- asset comments and revision history
 - fast test output, such as a web font preview or installable font file
 - font build tooling
 - specimen preview
 - publishing and feedback
-
-The architecture leaves room for MCP later, but the first implementation should use the Codex SDK to reduce moving parts.
 
 ## Architecture Diagram
 
@@ -78,14 +80,19 @@ flowchart LR
     LabUser["Authorized user"] --> Login["Login"]
     Login --> Studio["Studio"]
     Studio --> Projects["Projects"]
-    Projects --> Artifacts["Artifacts and notes"]
-    Projects --> CodexAction["Guide Project action"]
-    CodexAction --> CodexSDK["Codex SDK"]
-    CodexSDK --> Codex["Codex"]
-    Codex --> CodexSDK
-    CodexSDK --> CodexRun["Saved Codex run"]
+    Projects --> Artifacts["Artifacts, notes, and comments"]
+    Projects --> Guide["Guide Project action"]
+    Artifacts --> Refine["Refine Artifact action"]
+    Guide --> CodexBridge["Codex service boundary"]
+    Refine --> CodexBridge
+    CodexBridge --> MCP["Codex MCP / CLI / SDK / Responses"]
+    MCP --> Codex["Codex"]
+    Codex --> CodexBridge
+    CodexBridge --> CodexRun["Saved Codex run"]
+    CodexBridge --> Generated["Validated generated SVG"]
+    Generated --> Artifacts
     CodexRun --> Projects
     Projects --> SQLite["SQLite database"]
-    Showcase --> Previewed["Selected previews and releases"]
+    Showcase --> Previewed["Selected previews and feedback"]
     Previewed --> SQLite
 ```

@@ -1,42 +1,46 @@
 # Creative IP Studio
 
-Creative IP Studio is a small web app for working on early creative product ideas.
+Creative IP Studio is a small local web app for working on early creative product ideas.
 
-This repository currently contains a runnable local app skeleton plus planning and design artifacts.
+This repository contains a runnable Node app plus planning and design artifacts.
 
-The app lets a demo user sign in, create studio projects, add notes and context drops, import Project Zero or Project 1 source material, run a first `Guide Project` action, generate object-type specimens, and move selected previews into a showcase surface. The first example project is a typeface created from observations of an everyday object.
+The app lets a demo user sign in, create studio projects, add notes and context drops, import Project Zero or Project 1 source material, run project guidance through Codex, generate object-type SVG specimens, collect asset-level comments, and run Codex refinement to create a new SVG revision. The first example project is a typeface created from observations of an everyday object.
 
 ## Repository Contents
 
-- [PLAN.md](PLAN.md): active implementation plan
+- [PLAN.md](PLAN.md): current implementation state and next work
 - [docs/adr](docs/adr): architectural decisions
-- [docs/concept](docs/concept): stable product and concept material
+- [docs/concept](docs/concept): product and concept material
 - [docs/roadmap](docs/roadmap): future work and planned capabilities
 - `context/`: local working context, ignored by Git
-- `src/`: local app server, persistence, auth, and Codex guidance boundary
-- `test/`: smoke tests for persistence, authorization, guidance storage, and HTTP login
+- `data/`: local SQLite data and source material, ignored by Git
+- `uploads/`: local generated and uploaded files, ignored by Git
+- `src/`: local app server, persistence, auth, Codex MCP/CLI bridge, and SVG generation workflow
+- `test/`: tests for persistence, authorization, Codex guidance, refinement output, showcase rules, and HTTP routes
 
 ## Current State
 
 At this commit, the repo includes:
 
-- a runnable local web app skeleton
+- a runnable local web app
 - SQLite persistence using Node's built-in SQLite module
 - a seeded demo login
 - project creation and project-level authorization
 - protected notes and material drops
-- saved `Guide Project` runs with a mock fallback
+- saved `Guide Project` runs with a continuation form and mock fallback
 - Project Zero and Project 1 import paths for local photos and transcript material
 - generated metallic SVG specimens for the first identified glyphs
-- a showcase surface that only shows explicitly selected previews
-- focused smoke tests
+- asset-level comments with optional reference attachments
+- Codex refinement that saves a generated SVG revision as a new artifact
+- a showcase surface that accepts comments but blocks Codex refinement until the owner moves the project back to studio
+- focused tests
 - project planning and architecture decision records
 - an object typeface concept brief
-- a Git ignore rule for local context files
+- Git ignore rules for local context, data, uploads, and secrets
 
 ## Run Locally
 
-This app currently avoids framework dependencies so it can run in the local Codex desktop environment without `npm`.
+This app avoids framework dependencies so it can run in the local Codex desktop environment without `npm install`.
 
 ```sh
 node src/server.js
@@ -64,7 +68,7 @@ CODEX_REASONING_EFFORT=xhigh
 CODEX_PATH=/Applications/Codex.app/Contents/Resources/codex
 ```
 
-Put those values in `.env` or export them in the shell before starting the app. `.env` is ignored by Git. `OPENAI_API_KEY` is used by the Responses API fallback. The Codex SDK and Codex CLI paths can use the local Codex login; only set `CODEX_API_KEY` if you explicitly want Codex to use API-key auth.
+Put those values in `.env` or export them in the shell before starting the app. `.env` is ignored by Git. `OPENAI_API_KEY` is used by the Responses API fallback. The Codex MCP, CLI, and SDK paths can use the local Codex login. Only set `CODEX_API_KEY` if you explicitly want Codex to use API-key auth.
 
 Run tests:
 
@@ -74,9 +78,9 @@ node --test
 
 ## Codex Usage
 
-The app is structured to call Codex from the server.
+The app calls Codex from the server.
 
-The first Codex action is `Guide Project`. It reads the current project state and returns structured guidance:
+The project-level Codex action is `Guide Project`. It reads the current project state and returns structured guidance:
 
 - what the project appears to be
 - useful questions to answer next
@@ -84,9 +88,11 @@ The first Codex action is `Guide Project`. It reads the current project state an
 - a high-level path toward a working artifact
 - one small next action
 
-The app saves each Codex run so users can review how the project developed.
+The asset-level Codex action is `Refine Artifact`. It reads one asset, project notes, sibling artifact summaries, and asset comments. It asks Codex to return structured critique plus a `generatedAsset` payload containing SVG content. The server validates the SVG, writes it to the ignored `uploads/` directory, creates a new artifact record, and links the generated revision from the source asset timeline.
 
-`Guide Project` tries the Codex SDK first when `CODEX_PROVIDER=auto` or `CODEX_PROVIDER=codex-sdk`. If the SDK package is unavailable, `auto` falls back to Codex MCP by starting `codex mcp-server` and calling its `codex` tool. If that is unavailable, it falls back to the local Codex CLI bridge and then the OpenAI Responses API with the configured model and reasoning effort. If no live path is available, it uses a local mock response and still saves the run. This keeps the demo path usable while making the intended SDK/MCP boundary explicit.
+When `CODEX_PROVIDER=auto`, the app tries Codex MCP first by starting `codex mcp-server` and calling its `codex` tool. If that is unavailable, it falls back to the local Codex CLI bridge, then the Codex SDK, then the OpenAI Responses API. If no live path is available, it uses a local mock response and still saves the run.
+
+The app saves each Codex run so users can review how the project developed.
 
 ## Ideas Being Explored
 
@@ -98,9 +104,9 @@ The user learns from that response. They can see where the idea was clear, where
 
 This is useful because creative and technical work often depends on translation. A person may understand a problem one way, while another person or system understands it differently. The saved Codex guidance gives the user something concrete to react to, correct, and build on.
 
-The planned app should help the project improve while the user is working on it, not after a separate planning phase.
+The app should help the project improve while the user is working on it, not after a separate planning phase.
 
-## Planned Demo Flow
+## Demo Flow
 
 1. Log in.
 2. Create a project.
@@ -109,8 +115,10 @@ The planned app should help the project improve while the user is working on it,
 5. Import Project Zero or Project 1 material, or drop files directly into the project.
 6. Review the first Codex guidance pass.
 7. Confirm that guidance and SVG specimens are saved in the project history.
-8. Move selected material into the showcase.
+8. Add comments to generated assets.
+9. Run Codex refinement on a studio asset and review the generated SVG revision.
+10. Move selected material into the showcase for feedback.
 
 ## Development Status
 
-This repository has a local runnable skeleton. It is not production-ready.
+This repository has a local runnable prototype. It is not production-ready.
