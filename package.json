@@ -1,0 +1,16 @@
+{
+  "name": "creative-ip-studio",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch src/server.js",
+    "start": "node src/server.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "@openai/codex-sdk": "^0.123.0-alpha.4",
+    "openai": "^6.0.0"
+  },
+  "devDependencies": {}
+}

@@ -1,8 +1,8 @@
-# Creative IP Lab Plan
+# Creative IP Studio Plan
 
 ## Working Idea
 
-Build a private product lab where users can take an early creative idea, add source material, and use Codex to help turn it into a structured product direction.
+Build a creative product studio where users can take an early creative idea, drop in source material, and use Codex to help turn it into a structured product direction.
 
 The first example project is a typeface. A user starts with a loose idea, photos of an object, and notes about what they see in it. The app helps them move from that raw material toward a type system, glyph plan, artifacts, previews, and eventually a font release.
 
@@ -12,11 +12,11 @@ See [Example Project: Object Typeface](docs/concept/object-typeface.md).
 
 The app has two surfaces:
 
-1. Public lab surface
-   - Shows published products, preview artifacts, and items ready for feedback.
-   - Does not expose raw project material or private design work.
+1. Showcase surface
+   - Shows selected previews, reviewable artifacts, and items ready for feedback.
+   - Does not expose raw project material or studio work.
 
-2. Private lab surface
+2. Studio surface
    - Requires login.
    - Lets authorized users create and work on projects.
    - Stores project source material, notes, generated outputs, Codex runs, and review history.
@@ -104,19 +104,19 @@ Artifacts can start as simple records with metadata and file paths. The implemen
 
 Authorization is part of the product concept.
 
-The lab contains early creative IP:
+The studio contains early creative IP:
 
 - raw source material
 - unfinished ideas
 - design reasoning
 - generated drafts
-- private review history
+- protected review history
 
-Only authorized users can access private projects. Public users can only see items that the lab has chosen to publish, preview, or share for feedback.
+Only authorized users can access studio projects. Showcase viewers can only see items that the studio has chosen to preview, review, or release.
 
 ## Experimentation and Feedback
 
-The lab is an experimentation ground.
+The studio is an experimentation ground.
 
 The app should not assume every idea will become a product. A user can explore an idea, learn from the material, shelve it, and start another project.
 
@@ -143,11 +143,11 @@ The app should not execute generated code directly as part of the user session. 
 
 Meaningful first tests:
 
-- Users cannot access private projects unless authorized.
+- Users cannot access studio projects unless authorized.
 - Project records persist in SQLite.
 - Codex run records are saved with input and output.
 - `Guide Project` returns and stores the required structured fields.
-- Public product previews do not expose private artifacts.
+- Showcase previews do not expose protected artifacts.
 
 Typeface-specific tests can come later:
 
@@ -158,17 +158,27 @@ Typeface-specific tests can come later:
 
 ## Implementation Priorities
 
-1. Create app skeleton.
+Current MVP cut:
+
+1. Create a runnable local app skeleton.
 2. Add SQLite persistence.
 3. Add login and session handling.
 4. Add project creation.
-5. Add public and private lab surfaces.
-6. Add artifact and note storage.
-7. Add Codex SDK integration for `Guide Project`.
-8. Add tests for auth, persistence, and Codex run storage.
-9. Add first typeface project workflow.
-10. Add fast review outputs for the typeface path.
-11. Add preview and publishing states.
+5. Add studio and showcase surfaces.
+6. Add material drop and note storage.
+7. Add a Project Zero import path for local photos and transcript material.
+8. Add generated SVG specimens for the first identified glyphs: N, S, 5, 2, Z, i, W, a, and Q.
+9. Add a `Guide Project` action that saves structured guidance, with a local fallback if the live API call is unavailable.
+10. Add tests for auth, persistence, Codex run storage, specimen generation, and the HTTP login route.
+
+Next implementation steps:
+
+1. Tighten the outbound data policy before sending raw source material to Codex.
+2. Resolve API billing/model access so the live Codex call can replace fallback guidance.
+3. Add broader file upload support for protected source material.
+4. Add a richer typeface workflow for glyph review, iteration, and approvals.
+5. Add fast review outputs for the typeface path.
+6. Add preview and release states.
 
 ## Demo Goal
 
@@ -176,10 +186,10 @@ The demo should show a user moving from a raw idea to a structured product direc
 
 For the typeface example:
 
-1. Log in to the private lab.
+1. Log in to the studio.
 2. Create a typeface project.
 3. Add notes and object references.
 4. Let the app run the first Codex guidance pass.
 5. Review the generated plan and next actions.
 6. Show that the result is saved.
-7. Show the public lab surface where only selected previews or published artifacts are visible.
+7. Show the showcase surface where only selected previews or released artifacts are visible.

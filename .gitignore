@@ -1,2 +1,8 @@
 .DS_Store
 context/
+.env
+data/*.sqlite
+data/*.sqlite-*
+data/project zero/
+data/project-zero/
+uploads/

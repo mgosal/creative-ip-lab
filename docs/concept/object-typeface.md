@@ -24,7 +24,7 @@ An artist may see a shape, texture, movement, or pattern in an object. An engine
 
 The app should help a user start with something they noticed in the real world and develop it toward a usable digital product.
 
-The lab is also a place to test whether an idea should continue. The user can shelve the project at any time and start a new one.
+The studio is also a place to test whether an idea should continue. The user can shelve the project at any time and start a new one.
 
 ## Creative Direction
 
@@ -88,21 +88,21 @@ Useful test outputs can include:
 - specimen pages
 - font build files
 - web font files
-- public previews for feedback
+- showcase previews for feedback
 
 The purpose is fast review. A reviewer should be able to try the typeface in a real setting, such as a web page or a document, while the idea is still fresh enough to discuss.
 
-## Public and Private Surfaces
+## Studio and Showcase Surfaces
 
-The private lab contains the raw project material:
+The studio contains the raw project material:
 
 - original photos
-- private notes
+- protected notes
 - design reasoning
 - generated drafts
 - Codex run history
 
-The public lab can show selected outputs:
+The showcase can show selected outputs:
 
 - a specimen image
 - a preview word
@@ -111,7 +111,7 @@ The public lab can show selected outputs:
 - a web type sample
 - a released font package
 
-This supports a product lab workflow where early creative IP stays private until the user chooses to publish or preview it.
+This supports a product studio workflow where early creative IP stays protected until the user chooses to preview, review, or release it.
 
 ## Demo Story
 
@@ -121,4 +121,4 @@ The demo can show a user starting with a simple observation:
 
 The user adds notes and object references. The app starts the first Codex guidance pass. Codex turns the loose idea into a structured path for creating a typeface.
 
-The project then has a saved direction, a next action, and a private record of how the idea is developing.
+The project then has a saved direction, a next action, and a protected record of how the idea is developing.

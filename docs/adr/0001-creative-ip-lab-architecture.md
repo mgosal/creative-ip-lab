@@ -1,4 +1,4 @@
-# ADR 0001: Creative IP Lab Architecture
+# ADR 0001: Creative IP Studio Architecture
 
 ## Status
 
@@ -6,7 +6,7 @@ Accepted
 
 ## Context
 
-The app is a private product lab for early creative ideas. Users can create projects, add source material, and use Codex to help move an idea toward a working artifact.
+The app is a creative product studio for early creative ideas. Users can create projects, add source material, and use Codex to help move an idea toward a working artifact.
 
 The first example is a typeface project based on photos and notes about a physical object. The app should also support other product ideas later.
 
@@ -28,8 +28,8 @@ Use:
 - project-level authorization
 - Codex SDK for programmatic Codex calls
 - structured Codex outputs saved as project history
-- a public lab surface for published or preview material
-- a private lab surface for authorized project work
+- a showcase surface for selected preview or release material
+- a studio surface for authorized project work
 
 Codex will be used as a project guide first. The initial app action is `Guide Project`, which takes the saved project state and returns structured guidance, questions, next actions, and a high-level route toward a working artifact.
 
@@ -37,7 +37,7 @@ Codex will be used as a project guide first. The initial app action is `Guide Pr
 
 SQLite is enough for the first version and keeps the project easy to run locally.
 
-Session login and project collaborators directly support the idea that early creative work is private IP until the lab chooses to publish or preview it.
+Session login and project collaborators directly support the idea that early creative work is protected IP until the studio chooses to preview, review, or release it.
 
 The Codex SDK is a direct way to show programmatic Codex usage from inside the app. The app controls when Codex is called, what context is sent, how the response is validated, and how the result is stored.
 
@@ -74,10 +74,10 @@ The architecture leaves room for MCP later, but the first implementation should 
 
 ```mermaid
 flowchart LR
-    PublicUser["Public user"] --> PublicLab["Public lab"]
+    Reviewer["Reviewer"] --> Showcase["Showcase"]
     LabUser["Authorized user"] --> Login["Login"]
-    Login --> PrivateLab["Private lab"]
-    PrivateLab --> Projects["Projects"]
+    Login --> Studio["Studio"]
+    Studio --> Projects["Projects"]
     Projects --> Artifacts["Artifacts and notes"]
     Projects --> CodexAction["Guide Project action"]
     CodexAction --> CodexSDK["Codex SDK"]
@@ -86,6 +86,6 @@ flowchart LR
     CodexSDK --> CodexRun["Saved Codex run"]
     CodexRun --> Projects
     Projects --> SQLite["SQLite database"]
-    PublicLab --> Published["Published products and previews"]
-    Published --> SQLite
+    Showcase --> Previewed["Selected previews and releases"]
+    Previewed --> SQLite
 ```
