@@ -5,6 +5,7 @@ import { extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { config, rootDir } from "./config.js";
 import {
+  addArtifactComment,
   addArtifactSummary,
   addNote,
   createProject,
@@ -12,8 +13,12 @@ import {
   destroySession,
   findUserByEmail,
   findUserBySessionToken,
+  getArtifactCommentAttachment,
   getShowcaseArtifact,
   getArtifactForUser,
+  listArtifactCommentsForArtifact,
+  listArtifactCommentsForProject,
+  listArtifactRefinementsForArtifact,
   listArtifactsForProject,
   getProjectContext,
   getProjectForUser,
@@ -22,12 +27,13 @@ import {
   openDatabase,
   updateProjectStatus,
   verifyPassword,
+  saveArtifactRefinement,
   saveCodexRun
 } from "./db.js";
-import { guideProject } from "./codex.js";
-import { importProjectZero } from "./project-zero.js";
+import { guideProject, refineArtifact } from "./codex.js";
+import { importProjectOne, importProjectZero } from "./project-zero.js";
 import { generateProjectZeroSpecimens } from "./typeface.js";
-import { renderLab, renderLogin, renderProject, renderShowcase, renderNotFound } from "./views.js";
+import { renderArtifactDetail, renderLab, renderLogin, renderNewProject, renderProject, renderShowcase, renderNotFound } from "./views.js";
 
 export function createApp(database = openDatabase()) {
   return createServer(async (request, response) => {
@@ -75,9 +81,14 @@ export function createApp(database = openDatabase()) {
           ...project,
           previews: listArtifactsForProject(database, project.id)
             .filter((artifact) => artifact.kind === "glyph-svg")
-            .slice(0, 9)
+            .slice(0, 9),
+          artifactComments: listArtifactCommentsForProject(database, project.id)
         }));
-        return sendHtml(response, renderShowcase({ user, projects }));
+        return sendHtml(response, renderShowcase({
+          user,
+          projects,
+          notice: url.searchParams.get("saved")
+        }));
       }
 
       const artifactFileMatch = url.pathname.match(/^\/artifacts\/([^/]+)\/file$/);
@@ -87,6 +98,64 @@ export function createApp(database = openDatabase()) {
           : getShowcaseArtifact(database, artifactFileMatch[1]);
         if (!artifact || !artifact.path) return sendHtml(response, renderNotFound({ user }), 404);
         return serveLocalFile(artifact.path, response);
+      }
+
+      const commentFileMatch = url.pathname.match(/^\/comments\/([^/]+)\/file$/);
+      if (request.method === "GET" && commentFileMatch) {
+        const comment = getArtifactCommentAttachment(database, commentFileMatch[1], user?.id || "");
+        if (!comment || !comment.attachment_path) return sendHtml(response, renderNotFound({ user }), 404);
+        return serveLocalFile(comment.attachment_path, response);
+      }
+
+      const publicArtifactCommentMatch = url.pathname.match(/^\/artifacts\/([^/]+)\/comments$/);
+      if (request.method === "POST" && publicArtifactCommentMatch) {
+        const ownedArtifact = user ? getArtifactForUser(database, publicArtifactCommentMatch[1], user.id) : null;
+        const showcaseArtifact = getShowcaseArtifact(database, publicArtifactCommentMatch[1]);
+        const artifact = ownedArtifact || showcaseArtifact;
+        if (!artifact) return sendHtml(response, renderNotFound({ user }), 404);
+
+        const submission = await readCommentSubmission(request);
+        const attachment = submission.files[0] ? await saveCommentAttachment(artifact, submission.files[0]) : null;
+        if (submission.fields.body?.trim() || attachment) {
+          addArtifactComment(
+            database,
+            artifact.id,
+            user?.id || null,
+            submission.fields.body || "Attached reference.",
+            user?.name || submission.fields.name || "Showcase visitor",
+            attachment
+          );
+        }
+
+        if (submission.fields.returnTo === "asset") {
+          return redirect(response, `/artifacts/${artifact.id}?saved=comment#comments`);
+        }
+
+        if (submission.fields.returnTo === "showcase" || (!ownedArtifact && showcaseArtifact)) {
+          return redirect(response, `/showcase?saved=comment#asset-${artifact.id}`);
+        }
+        return redirect(response, `/projects/${artifact.project_id}?saved=comment#asset-${artifact.id}`);
+      }
+
+      const artifactDetailMatch = url.pathname.match(/^\/artifacts\/([^/]+)$/);
+      if (request.method === "GET" && artifactDetailMatch) {
+        const ownedArtifact = user ? getArtifactForUser(database, artifactDetailMatch[1], user.id) : null;
+        const showcaseArtifact = getShowcaseArtifact(database, artifactDetailMatch[1]);
+        const artifact = ownedArtifact || showcaseArtifact;
+        if (!artifact) return user ? sendHtml(response, renderNotFound({ user }), 404) : redirect(response, "/login");
+
+        const context = getProjectContext(database, artifact.project_id);
+        const isOwnedShowcaseAsset = Boolean(ownedArtifact) && context.project.status === "showcase";
+        return sendHtml(response, renderArtifactDetail({
+          user,
+          project: context.project,
+          artifact,
+          comments: listArtifactCommentsForArtifact(database, artifact.id),
+          refinements: listArtifactRefinementsForArtifact(database, artifact.id),
+          canRefine: Boolean(ownedArtifact) && !isOwnedShowcaseAsset,
+          refineLockedReason: isOwnedShowcaseAsset ? "Move this project back to studio before refining with Codex." : "",
+          notice: url.searchParams.get("saved")
+        }));
       }
 
       if (request.method === "GET" && url.pathname === "/lab") {
@@ -110,17 +179,41 @@ export function createApp(database = openDatabase()) {
         return redirect(response, `/projects/${result.projectId}`);
       }
 
+      if (request.method === "POST" && url.pathname === "/project-one/import") {
+        const result = await importProjectOne(database, user.id);
+        return redirect(response, `/projects/${result.projectId}`);
+      }
+
+      if (request.method === "GET" && url.pathname === "/projects/new") {
+        return sendHtml(response, renderNewProject({ user, error: url.searchParams.get("error") }));
+      }
+
       if (request.method === "POST" && url.pathname === "/projects") {
-        const body = await readForm(request);
-        if (!body.title?.trim()) {
+        const parsed = await readProjectCreate(request);
+        if (!parsed.fields.title?.trim()) {
           return redirect(response, "/studio?error=Project%20title%20is%20required");
         }
 
         const projectId = createProject(database, user.id, {
-          title: body.title,
-          projectType: body.projectType || "typeface",
-          description: body.description || ""
+          title: parsed.fields.title,
+          projectType: parsed.fields.projectType || "typeface",
+          description: parsed.fields.description || ""
         });
+
+        const initialContext = parsed.fields.initialContext?.trim();
+        if (initialContext) {
+          addNote(database, projectId, user.id, initialContext);
+        }
+        if (parsed.files.length) {
+          await saveMaterialDrop(database, projectId, user.id, {
+            fields: {
+              kind: parsed.fields.kind || "source",
+              title: parsed.fields.dropTitle || "Initial context drop",
+              summary: initialContext || parsed.fields.description || ""
+            },
+            files: parsed.files
+          });
+        }
 
         return redirect(response, `/projects/${projectId}`);
       }
@@ -129,7 +222,11 @@ export function createApp(database = openDatabase()) {
       if (request.method === "GET" && projectMatch) {
         const project = getProjectForUser(database, projectMatch[1], user.id);
         if (!project) return sendHtml(response, renderNotFound({ user }), 404);
-        return sendHtml(response, renderProject({ user, ...getProjectContext(database, project.id) }));
+        return sendHtml(response, renderProject({
+          user,
+          notice: url.searchParams.get("saved"),
+          ...getProjectContext(database, project.id)
+        }));
       }
 
       const noteMatch = url.pathname.match(/^\/projects\/([^/]+)\/notes$/);
@@ -138,7 +235,7 @@ export function createApp(database = openDatabase()) {
         if (!project) return sendHtml(response, renderNotFound({ user }), 404);
         const body = await readForm(request);
         if (body.body?.trim()) addNote(database, project.id, user.id, body.body);
-        return redirect(response, `/projects/${project.id}`);
+        return redirect(response, `/projects/${project.id}?saved=note#notes`);
       }
 
       const artifactMatch = url.pathname.match(/^\/projects\/([^/]+)\/artifacts$/);
@@ -150,7 +247,7 @@ export function createApp(database = openDatabase()) {
 
         if (contentType.startsWith("multipart/form-data")) {
           const drop = parseMultipartForm(body, contentType);
-          await saveMaterialDrop(database, project.id, drop);
+          await saveMaterialDrop(database, project.id, user.id, drop);
         } else {
           const fields = Object.fromEntries(new URLSearchParams(body.toString("utf8")));
           if (fields.title?.trim() || fields.summary?.trim()) {
@@ -161,16 +258,40 @@ export function createApp(database = openDatabase()) {
             });
           }
         }
-        return redirect(response, `/projects/${project.id}`);
+        return redirect(response, `/projects/${project.id}?saved=context#notes`);
+      }
+
+      const artifactRefineMatch = url.pathname.match(/^\/artifacts\/([^/]+)\/refine$/);
+      if (request.method === "POST" && artifactRefineMatch) {
+        const artifact = getArtifactForUser(database, artifactRefineMatch[1], user.id);
+        if (!artifact) return sendHtml(response, renderNotFound({ user }), 404);
+        const context = getProjectContext(database, artifact.project_id);
+        if (context.project.status === "showcase") {
+          return redirect(response, `/artifacts/${artifact.id}?saved=studio-required#comments`);
+        }
+        const comments = context.artifactComments.filter((comment) => comment.artifact_id === artifact.id);
+        const run = await refineArtifact(context, artifact, comments);
+        const runId = saveCodexRun(database, artifact.project_id, run);
+        const generatedArtifact = await saveGeneratedRefinementAsset(database, artifact, run);
+        saveArtifactRefinement(database, artifact.id, runId, run, generatedArtifact?.id || null);
+        return redirect(response, `/artifacts/${artifact.id}?saved=refinement#timeline`);
       }
 
       const guideMatch = url.pathname.match(/^\/projects\/([^/]+)\/guide$/);
       if (request.method === "POST" && guideMatch) {
         const project = getProjectForUser(database, guideMatch[1], user.id);
         if (!project) return sendHtml(response, renderNotFound({ user }), 404);
-        const run = await guideProject(getProjectContext(database, project.id));
+        const body = await readForm(request);
+        const followUp = body.guidanceReply?.trim() || "";
+        if (followUp) {
+          addNote(database, project.id, user.id, `Codex loop response:\n${followUp}`);
+        }
+        const run = await guideProject({
+          ...getProjectContext(database, project.id),
+          followUp
+        });
         saveCodexRun(database, project.id, run);
-        return redirect(response, `/projects/${project.id}`);
+        return redirect(response, `/projects/${project.id}?saved=guidance#guidance`);
       }
 
       const specimenMatch = url.pathname.match(/^\/projects\/([^/]+)\/specimens$/);
@@ -251,6 +372,32 @@ async function readForm(request) {
   return Object.fromEntries(new URLSearchParams(body.toString("utf8")));
 }
 
+async function readProjectCreate(request) {
+  const contentType = request.headers["content-type"] || "";
+  const body = await readBody(request);
+  if (contentType.startsWith("multipart/form-data")) {
+    return parseMultipartForm(body, contentType);
+  }
+
+  return {
+    fields: Object.fromEntries(new URLSearchParams(body.toString("utf8"))),
+    files: []
+  };
+}
+
+async function readCommentSubmission(request) {
+  const contentType = request.headers["content-type"] || "";
+  const body = await readBody(request);
+  if (contentType.startsWith("multipart/form-data")) {
+    return parseMultipartForm(body, contentType);
+  }
+
+  return {
+    fields: Object.fromEntries(new URLSearchParams(body.toString("utf8"))),
+    files: []
+  };
+}
+
 async function readBody(request) {
   const chunks = [];
   let size = 0;
@@ -306,16 +453,21 @@ function parseMultipartForm(body, contentType) {
   return { fields, files };
 }
 
-async function saveMaterialDrop(database, projectId, drop) {
+async function saveMaterialDrop(database, projectId, userId, drop) {
   const summary = drop.fields.summary?.trim() || "";
   const kind = drop.fields.kind?.trim() || "material";
   const title = drop.fields.title?.trim() || "Material drop";
+
+  if (summary) {
+    const prefix = drop.files.length ? `${title}\n\n` : "";
+    addNote(database, projectId, userId, `${prefix}${summary}`);
+  }
 
   if (!drop.files.length && (title || summary)) {
     addArtifactSummary(database, projectId, {
       kind,
       title,
-      summary
+      summary: summary ? "Context saved as a project note." : ""
     });
     return;
   }
@@ -332,10 +484,81 @@ async function saveMaterialDrop(database, projectId, drop) {
     addArtifactSummary(database, projectId, {
       kind,
       title: safeName,
-      summary: summary || `${file.contentType}, ${file.buffer.length} bytes`,
+      summary: summary
+        ? `Part of context drop "${title}". ${file.contentType}, ${file.buffer.length} bytes.`
+        : `${file.contentType}, ${file.buffer.length} bytes`,
       path: storedPath
     });
   }
+}
+
+async function saveCommentAttachment(artifact, file) {
+  const safeName = sanitizeFilename(file.filename);
+  const commentDir = join(config.uploadDir, artifact.project_id, "asset-comments", artifact.id);
+  const storedName = `${Date.now()}-${randomUUID()}-${safeName}`;
+  const storedPath = join(commentDir, storedName);
+  await mkdir(commentDir, { recursive: true });
+  await writeFile(storedPath, file.buffer);
+
+  return {
+    title: safeName,
+    path: storedPath,
+    contentType: file.contentType
+  };
+}
+
+async function saveGeneratedRefinementAsset(database, sourceArtifact, run) {
+  const generatedAsset = safeGeneratedAsset(run.output.generatedAsset);
+  if (!generatedAsset) return null;
+
+  const generatedDir = join(config.uploadDir, sourceArtifact.project_id, "generated");
+  await mkdir(generatedDir, { recursive: true });
+
+  const filename = `${Date.now()}-${randomUUID()}-${generatedAsset.filename}`;
+  const path = join(generatedDir, filename);
+  await writeFile(path, generatedAsset.content, "utf8");
+
+  const id = addArtifactSummary(database, sourceArtifact.project_id, {
+    kind: generatedAsset.kind,
+    title: generatedAsset.title,
+    summary: `${generatedAsset.summary} Source asset: ${sourceArtifact.title}. Codex status: ${run.status}.`,
+    path
+  });
+
+  return { id, path };
+}
+
+function safeGeneratedAsset(asset) {
+  if (!asset?.content) return null;
+  const content = sanitizeSvgContent(asset.content);
+  if (!content) return null;
+
+  return {
+    title: String(asset.title || "Codex refinement").trim().slice(0, 120),
+    kind: String(asset.kind || "glyph-svg").trim().slice(0, 40) || "glyph-svg",
+    summary: String(asset.summary || "Generated by the Codex refinement pipeline.").trim().slice(0, 500),
+    filename: ensureSvgFilename(sanitizeFilename(asset.filename || "codex-refinement.svg")),
+    content
+  };
+}
+
+function sanitizeSvgContent(value) {
+  const content = String(value || "").trim();
+  const start = content.indexOf("<svg");
+  const end = content.lastIndexOf("</svg>");
+  if (start === -1 || end === -1 || end <= start) return "";
+
+  const svg = content.slice(start, end + 6);
+  if (/<script\b/i.test(svg)) return "";
+  if (/<foreignObject\b/i.test(svg)) return "";
+  if (/\son[a-z]+\s*=/i.test(svg)) return "";
+  if (/javascript:/i.test(svg)) return "";
+  if (/\b(?:href|src)\s*=\s*["']https?:/i.test(svg)) return "";
+  return svg;
+}
+
+function ensureSvgFilename(filename) {
+  return filename.toLowerCase().endsWith(".svg") ? filename : `${filename}.svg`;
 }
 
 function sanitizeFilename(filename) {

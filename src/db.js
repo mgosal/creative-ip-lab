@@ -85,6 +85,30 @@ function migrate(db) {
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
 
+    CREATE TABLE IF NOT EXISTS artifact_comments (
+      id TEXT PRIMARY KEY,
+      artifact_id TEXT NOT NULL REFERENCES artifacts(id) ON DELETE CASCADE,
+      author_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      display_name TEXT,
+      attachment_path TEXT,
+      attachment_title TEXT,
+      attachment_content_type TEXT,
+      body TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS artifact_refinements (
+      id TEXT PRIMARY KEY,
+      artifact_id TEXT NOT NULL REFERENCES artifacts(id) ON DELETE CASCADE,
+      codex_run_id TEXT REFERENCES codex_runs(id) ON DELETE SET NULL,
+      generated_artifact_id TEXT REFERENCES artifacts(id) ON DELETE SET NULL,
+      model TEXT NOT NULL,
+      status TEXT NOT NULL,
+      summary TEXT NOT NULL DEFAULT '',
+      output_json TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+
     CREATE TABLE IF NOT EXISTS codex_runs (
       id TEXT PRIMARY KEY,
       project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
@@ -101,6 +125,22 @@ function migrate(db) {
     UPDATE projects SET status = 'studio' WHERE status = 'private';
     UPDATE projects SET status = 'showcase' WHERE status = 'public';
   `);
+
+  try {
+    db.exec("ALTER TABLE artifact_comments ADD COLUMN display_name TEXT");
+  } catch {}
+  try {
+    db.exec("ALTER TABLE artifact_comments ADD COLUMN attachment_path TEXT");
+  } catch {}
+  try {
+    db.exec("ALTER TABLE artifact_comments ADD COLUMN attachment_title TEXT");
+  } catch {}
+  try {
+    db.exec("ALTER TABLE artifact_comments ADD COLUMN attachment_content_type TEXT");
+  } catch {}
+  try {
+    db.exec("ALTER TABLE artifact_refinements ADD COLUMN generated_artifact_id TEXT");
+  } catch {}
 }
 
 function seedDemoUser(db) {
@@ -111,6 +151,19 @@ function seedDemoUser(db) {
     INSERT INTO users (id, email, name, password_hash)
     VALUES (?, ?, ?, ?)
   `).run(randomUUID(), config.demoEmail, "Mandip", hashPassword(config.demoPassword));
+}
+
+function feedbackUserId(db) {
+  const email = "showcase-feedback@creative-ip-studio.local";
+  const existing = db.prepare("SELECT id FROM users WHERE email = ?").get(email);
+  if (existing) return existing.id;
+
+  const id = randomUUID();
+  db.prepare(`
+    INSERT INTO users (id, email, name, password_hash)
+    VALUES (?, ?, ?, ?)
+  `).run(id, email, "Showcase visitor", hashPassword(randomUUID()));
+  return id;
 }
 
 export function createSession(db, userId) {
@@ -244,6 +297,53 @@ export function getShowcaseArtifact(db, artifactId) {
   `).get(artifactId);
 }
 
+export function listArtifactCommentsForProject(db, projectId) {
+  return db.prepare(`
+    SELECT
+      artifact_comments.*,
+      COALESCE(artifact_comments.display_name, users.name) AS author_name
+    FROM artifact_comments
+    JOIN artifacts ON artifacts.id = artifact_comments.artifact_id
+    JOIN users ON users.id = artifact_comments.author_id
+    WHERE artifacts.project_id = ?
+    ORDER BY artifact_comments.created_at DESC
+  `).all(projectId);
+}
+
+export function listArtifactCommentsForArtifact(db, artifactId) {
+  return db.prepare(`
+    SELECT
+      artifact_comments.*,
+      COALESCE(artifact_comments.display_name, users.name) AS author_name
+    FROM artifact_comments
+    JOIN users ON users.id = artifact_comments.author_id
+    WHERE artifact_comments.artifact_id = ?
+    ORDER BY artifact_comments.created_at DESC
+  `).all(artifactId);
+}
+
+export function getArtifactCommentAttachment(db, commentId, userId = "") {
+  return db.prepare(`
+    SELECT
+      artifact_comments.*,
+      artifacts.project_id,
+      projects.status AS project_status
+    FROM artifact_comments
+    JOIN artifacts ON artifacts.id = artifact_comments.artifact_id
+    JOIN projects ON projects.id = artifacts.project_id
+    LEFT JOIN project_collaborators
+      ON project_collaborators.project_id = projects.id
+      AND project_collaborators.user_id = ?
+    WHERE artifact_comments.id = ?
+      AND artifact_comments.attachment_path IS NOT NULL
+      AND (
+        projects.status = 'showcase'
+        OR project_collaborators.user_id IS NOT NULL
+      )
+    LIMIT 1
+  `).get(userId, commentId);
+}
+
 export function addNote(db, projectId, authorId, body) {
   db.prepare(`
     INSERT INTO notes (id, project_id, author_id, body)
@@ -261,11 +361,12 @@ export function noteExists(db, projectId, body) {
 }
 
 export function addArtifactSummary(db, projectId, input) {
+  const id = randomUUID();
   db.prepare(`
     INSERT INTO artifacts (id, project_id, kind, title, summary, path)
     VALUES (?, ?, ?, ?, ?, ?)
   `).run(
-    randomUUID(),
+    id,
     projectId,
     input.kind.trim() || "source",
     input.title.trim(),
@@ -273,6 +374,75 @@ export function addArtifactSummary(db, projectId, input) {
     input.path || null
   );
   touchProject(db, projectId);
+  return id;
+}
+
+export function addArtifactComment(db, artifactId, authorId, body, displayName = "", attachment = null) {
+  const artifact = db.prepare("SELECT * FROM artifacts WHERE id = ?").get(artifactId);
+  if (!artifact) return;
+
+  const resolvedAuthorId = authorId || feedbackUserId(db);
+  const visibleName = displayName.trim() || null;
+
+  db.prepare(`
+    INSERT INTO artifact_comments (
+      id,
+      artifact_id,
+      author_id,
+      display_name,
+      attachment_path,
+      attachment_title,
+      attachment_content_type,
+      body
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    randomUUID(),
+    artifactId,
+    resolvedAuthorId,
+    visibleName,
+    attachment?.path || null,
+    attachment?.title || null,
+    attachment?.contentType || null,
+    body.trim()
+  );
+  touchProject(db, artifact.project_id);
+}
+
+export function saveArtifactRefinement(db, artifactId, codexRunId, run, generatedArtifactId = null) {
+  const artifact = db.prepare("SELECT * FROM artifacts WHERE id = ?").get(artifactId);
+  if (!artifact) return null;
+
+  const id = randomUUID();
+  db.prepare(`
+    INSERT INTO artifact_refinements (id, artifact_id, codex_run_id, generated_artifact_id, model, status, summary, output_json)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    id,
+    artifactId,
+    codexRunId,
+    generatedArtifactId,
+    run.model,
+    run.status,
+    run.output.nextAction || run.output.productDirection || run.inputSummary || "",
+    JSON.stringify(run.output)
+  );
+  touchProject(db, artifact.project_id);
+  return id;
+}
+
+export function listArtifactRefinementsForArtifact(db, artifactId) {
+  return db.prepare(`
+    SELECT
+      artifact_refinements.*,
+      generated.title AS generated_artifact_title,
+      generated.path AS generated_artifact_path
+    FROM artifact_refinements
+    LEFT JOIN artifacts AS generated
+      ON generated.id = artifact_refinements.generated_artifact_id
+    WHERE artifact_refinements.artifact_id = ?
+    ORDER BY artifact_refinements.created_at DESC
+  `).all(artifactId);
 }
 
 export function artifactExists(db, projectId, input) {
@@ -287,16 +457,18 @@ export function getProjectContext(db, projectId) {
   const project = db.prepare("SELECT * FROM projects WHERE id = ?").get(projectId);
   const notes = db.prepare("SELECT * FROM notes WHERE project_id = ? ORDER BY created_at DESC").all(projectId);
   const artifacts = db.prepare("SELECT * FROM artifacts WHERE project_id = ? ORDER BY created_at DESC").all(projectId);
+  const artifactComments = listArtifactCommentsForProject(db, projectId);
   const codexRuns = db.prepare("SELECT * FROM codex_runs WHERE project_id = ? ORDER BY created_at DESC").all(projectId);
-  return { project, notes, artifacts, codexRuns };
+  return { project, notes, artifacts, artifactComments, codexRuns };
 }
 
 export function saveCodexRun(db, projectId, run) {
+  const id = randomUUID();
   db.prepare(`
     INSERT INTO codex_runs (id, project_id, action, model, input_summary, output_json, status)
     VALUES (?, ?, ?, ?, ?, ?, ?)
   `).run(
-    randomUUID(),
+    id,
     projectId,
     run.action,
     run.model,
@@ -305,6 +477,7 @@ export function saveCodexRun(db, projectId, run) {
     run.status
   );
   touchProject(db, projectId);
+  return id;
 }
 
 export function updateProjectStatus(db, projectId, status) {

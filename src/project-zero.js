@@ -12,21 +12,45 @@ import {
 } from "./db.js";
 import { generateProjectZeroSpecimens, identifiedGlyphs } from "./typeface.js";
 
-const projectTitle = "Project Zero";
 const materialDir = join(rootDir, "data", "project zero");
 
 export async function importProjectZero(db, userId) {
-  let project = findProjectByTitleForUser(db, userId, projectTitle);
+  return importSeedProject(db, userId, {
+    title: "Project Zero",
+    description: "Typeface exploration from a desk-mounted MagSafe stand, using photographed configurations as source material.",
+    direction: [
+      "Project Zero is the raw first pass.",
+      "Use the source object, transcript, and identified glyph candidates to establish the first object-type system."
+    ].join("\n")
+  });
+}
+
+export async function importProjectOne(db, userId) {
+  return importSeedProject(db, userId, {
+    title: "Project 1",
+    description: "Metallic depth typeface from Project Zero source inputs, focused on hinge joints, constrained movement, and dimensional letter construction.",
+    direction: [
+      "Project 1 treats the Project Zero inputs as source material, not as a literal photo-tracing exercise.",
+      "The target creative asset is a metallic object typeface with visible depth, graphite/black metal surfaces, hinge pins, rings, subtle highlights, and shadowed joins.",
+      "The N is the key test glyph. It should not read as three generic strokes. Its middle line should feel constrained by the object's movement: subtly bent, jointed, slightly awkward, and mechanically plausible.",
+      "Extract construction rules from the object's physical limits: rotation, hinge axes, ring counters, clamp pressure, and places where movement stops.",
+      "Use Codex guidance to turn the source pile into a small sequence: source read, visual rules, glyph decisions, specimen critique, and next asset output."
+    ].join("\n")
+  });
+}
+
+async function importSeedProject(db, userId, seed) {
+  let project = findProjectByTitleForUser(db, userId, seed.title);
   if (!project) {
     const projectId = createProject(db, userId, {
-      title: projectTitle,
+      title: seed.title,
       projectType: "typeface",
-      description: "Typeface exploration from a desk-mounted MagSafe stand, using photographed configurations as source material."
+      description: seed.description
     });
     project = getProjectForUser(db, projectId, userId);
   }
 
-  const imported = importMaterial(db, project.id, userId);
+  const imported = importMaterial(db, project.id, userId, seed);
   const glyphs = await generateProjectZeroSpecimens(db, project.id);
 
   return {
@@ -36,7 +60,7 @@ export async function importProjectZero(db, userId) {
   };
 }
 
-function importMaterial(db, projectId, userId) {
+function importMaterial(db, projectId, userId, seed) {
   if (!existsSync(materialDir)) {
     return { files: 0, notes: 0 };
   }
@@ -53,7 +77,7 @@ function importMaterial(db, projectId, userId) {
 
     const title = path.split("/").pop();
     const kind = imageExtension(extension) ? "photo" : "dictation";
-    const summary = materialSummary(title, extension);
+    const summary = materialSummary(title, extension, seed.title);
 
     if (!artifactExists(db, projectId, { kind, title })) {
       addArtifactSummary(db, projectId, {
@@ -66,19 +90,24 @@ function importMaterial(db, projectId, userId) {
     }
   }
 
-  const transcript = readTranscript();
-  if (transcript && !noteExists(db, projectId, transcript)) {
-    addNote(db, projectId, userId, transcript);
-    importedNotes += 1;
-  }
-
-  const glyphNote = `Identified starting glyphs from Project Zero material: ${identifiedGlyphs.join(", ")}.`;
-  if (!noteExists(db, projectId, glyphNote)) {
-    addNote(db, projectId, userId, glyphNote);
+  const contextNote = buildContextNote(seed);
+  if (contextNote && !noteExists(db, projectId, contextNote)) {
+    addNote(db, projectId, userId, contextNote);
     importedNotes += 1;
   }
 
   return { files: importedFiles, notes: importedNotes };
+}
+
+function buildContextNote(seed) {
+  return [
+    `${seed.title} source context:`,
+    seed.direction,
+    "",
+    readTranscript(),
+    "",
+    `Identified starting glyphs from the source material: ${identifiedGlyphs.join(", ")}.`
+  ].filter(Boolean).join("\n");
 }
 
 function readTranscript() {
@@ -95,11 +124,11 @@ function readTranscript() {
   ].join("\n");
 }
 
-function materialSummary(title, extension) {
+function materialSummary(title, extension, projectLabel) {
   if (imageExtension(extension)) {
-    return `Project Zero reference photo imported from local material drop: ${title}.`;
+    return `${projectLabel} source photo from the local Project Zero material folder: ${title}. Context is captured once in the project source note.`;
   }
-  return `Project Zero dictation or note imported from local material drop: ${title}.`;
+  return `${projectLabel} dictation or note from the local Project Zero material folder: ${title}. Context is captured once in the project source note.`;
 }
 
 function imageExtension(extension) {
