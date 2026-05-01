@@ -39,8 +39,9 @@ The app has two surfaces:
 10. User runs `Refine Artifact` on a studio asset.
 11. Codex returns structured critique plus a generated SVG asset.
 12. The app validates and stores the SVG revision as a new artifact and links it from the source asset timeline.
-13. User can download an OpenType test font from studio or from a showcased project.
-14. User can move the project to showcase for feedback. Showcase comments and font downloads remain available, but Codex refinement is locked until the project returns to studio.
+13. User can rebuild an OpenType test font from the latest saved SVG artifact for each glyph.
+14. User can download an OpenType test font from studio or from a showcased project.
+15. User can move the project to showcase for feedback. Showcase comments and font downloads remain available, but Codex refinement is locked until the project returns to studio.
 
 ## Codex Actions
 
@@ -140,6 +141,7 @@ Current tests cover:
 - Guidance continuation route
 - Codex refinement creating a generated artifact
 - Blocking Codex refinement while an owned asset is in showcase
+- Latest-per-glyph font export selection
 - Public showcase and authenticated owner font downloads
 
 ## Completed MVP Cut
@@ -155,7 +157,7 @@ Current tests cover:
 9. `Guide Project` action with structured output, continuation, live Codex path, and local fallback.
 10. `Refine Artifact` action with Codex-generated SVG revision storage.
 11. Asset comments and optional reference attachments.
-12. OpenType test-font export through FontForge-generated files in `exports/`.
+12. OpenType test-font export through FontForge-generated files in `exports/`, with an authenticated rebuild action that selects the latest thin SVG per glyph.
 13. Tests for the main persistence, auth, guidance, refinement, showcase rules, and font download routes.
 
 ## Next Implementation Steps
@@ -183,5 +185,6 @@ For the typeface example:
 6. Generate SVG specimens.
 7. Add asset comments.
 8. Run Codex refinement and show the generated SVG revision.
-9. Download the generated test font from the project or showcase.
+9. Rebuild the generated test font from the project.
+10. Download the generated test font from the project or showcase.
 9. Move the project to showcase and show the comment-only feedback surface.

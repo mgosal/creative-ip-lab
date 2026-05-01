@@ -196,7 +196,8 @@ export function renderProject({ user, project, notes, artifacts, artifactComment
     context: "Context saved.",
     comment: "Asset comment saved.",
     refinement: "Asset refinement saved.",
-    guidance: "Guidance updated."
+    guidance: "Guidance updated.",
+    font: "Test font rebuilt from the latest glyph assets."
   }[notice];
 
   return layout({
@@ -212,6 +213,7 @@ export function renderProject({ user, project, notes, artifacts, artifactComment
           </div>
           <div class="button-row">
             ${fontExportAvailable ? `<a class="button secondary" href="/projects/${project.id}/export/font">Download test font</a>` : ""}
+            ${glyphArtifacts.length ? `<form method="post" action="/projects/${project.id}/export/font/build"><button class="button secondary" type="submit">${fontExportAvailable ? "Rebuild test font" : "Build test font"}</button></form>` : ""}
             <form method="post" action="/projects/${project.id}/status">
               <input type="hidden" name="status" value="${project.status === "showcase" ? "studio" : "showcase"}">
               <button class="button secondary" type="submit">${project.status === "showcase" ? "Move to studio" : "Move to showcase"}</button>
@@ -220,7 +222,7 @@ export function renderProject({ user, project, notes, artifacts, artifactComment
         </div>
         ${noticeText ? `<p class="notice">${escapeHtml(noticeText)}</p>` : ""}
 
-        <div class="panel specimen-panel">
+        <div class="panel specimen-panel" id="generated-assets">
           <div class="section-head">
             <div>
               <h2>Generated assets</h2>

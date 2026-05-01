@@ -21,6 +21,7 @@ import {
 import { buildGuideProjectInput, guideProject } from "../src/codex.js";
 import { config } from "../src/config.js";
 import { createApp } from "../src/server.js";
+import { selectLatestGlyphArtifacts } from "../src/font-build.js";
 import { generateProjectZeroSpecimens, identifiedGlyphs } from "../src/typeface.js";
 
 const tmpRoot = mkdtempSync(join(tmpdir(), "creative-ip-lab-"));
@@ -140,6 +141,64 @@ describe("Guide Project", () => {
   });
 });
 
+describe("font export selection", () => {
+  it("selects the latest SVG artifact for each glyph in the requested style", () => {
+    const selected = selectLatestGlyphArtifacts([
+      {
+        id: "old-n",
+        kind: "glyph-svg",
+        title: "N / Thin Metal",
+        path: join(tmpRoot, "old-n-thin.svg"),
+        created_at: "2026-05-01 01:00:00"
+      },
+      {
+        id: "regular-n",
+        kind: "glyph-svg",
+        title: "N / Regular Metal",
+        path: join(tmpRoot, "regular-n-regular.svg"),
+        created_at: "2026-05-01 03:00:00"
+      },
+      {
+        id: "corrected-n",
+        kind: "glyph-svg",
+        title: "N / Thin Metal / Corrected Direction",
+        path: join(tmpRoot, "object-type-metal-n-thin-corrected-direction.svg"),
+        created_at: "2026-05-01 04:00:00"
+      },
+      {
+        id: "s-thin",
+        kind: "glyph-svg",
+        title: "S / Thin Metal",
+        path: join(tmpRoot, "object-type-metal-s-thin.svg"),
+        created_at: "2026-05-01 02:00:00"
+      },
+      {
+        id: "a-thin",
+        kind: "glyph-svg",
+        title: "a / Thin Metal",
+        path: join(tmpRoot, "object-type-metal-lower-a-thin.svg"),
+        created_at: "2026-05-01 02:30:00"
+      },
+      {
+        id: "source",
+        kind: "source",
+        title: "IMG_1.jpeg",
+        path: join(tmpRoot, "IMG_1.jpeg"),
+        created_at: "2026-05-01 05:00:00"
+      }
+    ].map((artifact) => {
+      if (artifact.path.endsWith(".svg")) writeFileSync(artifact.path, "<svg></svg>");
+      return artifact;
+    }), "thin");
+
+    assert.deepEqual(selected.map((item) => [item.glyph, item.artifact.id]), [
+      ["N", "corrected-n"],
+      ["S", "s-thin"],
+      ["a", "a-thin"]
+    ]);
+  });
+});
+
 describe("Project Zero specimens", () => {
   it("generates thin, regular, and bold SVG artifacts for identified glyphs", async () => {
     const user = findUserByEmail(db, "mandip@example.com");
@@ -233,6 +292,32 @@ describe("http app", () => {
 
     assert.equal(response.status, 200);
     assert.match(html, new RegExp(`<img class="material-preview"[^>]+/artifacts/${artifactId}/file`));
+  });
+
+  it("shows the font build action when a project has glyph artifacts", async () => {
+    const user = findUserByEmail(db, "mandip@example.com");
+    const token = createSession(db, user.id);
+    const projectId = createProject(db, user.id, {
+      title: "Font Build Project",
+      projectType: "typeface",
+      description: "Has glyphs to export"
+    });
+    addArtifactSummary(db, projectId, {
+      kind: "glyph-svg",
+      title: "N / Thin Metal",
+      summary: "A glyph that can enter a font",
+      path: join(tmpRoot, "font-build-n-thin.svg")
+    });
+    writeFileSync(join(tmpRoot, "font-build-n-thin.svg"), "<svg></svg>");
+
+    const response = await fetch(`${baseUrl}/projects/${projectId}`, {
+      headers: { cookie: `${config.sessionCookie}=${token}` }
+    });
+    const html = await response.text();
+
+    assert.equal(response.status, 200);
+    assert.match(html, new RegExp(`/projects/${projectId}/export/font/build`));
+    assert.match(html, /Build test font/);
   });
 
   it("saves a generated artifact from the Codex refinement pipeline", async () => {

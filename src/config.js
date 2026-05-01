@@ -20,7 +20,8 @@ export const config = {
   codexProvider: process.env.CODEX_PROVIDER || "auto",
   codexModel: process.env.CODEX_MODEL || "gpt-5.5",
   codexReasoningEffort: process.env.CODEX_REASONING_EFFORT || "xhigh",
-  codexPath: process.env.CODEX_PATH || ""
+  codexPath: process.env.CODEX_PATH || "",
+  fontforgePath: process.env.FONTFORGE_PATH || "fontforge"
 };
 
 function loadDotEnv(path) {

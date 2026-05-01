@@ -33,6 +33,7 @@ import {
 } from "./db.js";
 import { guideProject, refineArtifact } from "./codex.js";
 import { buildArtifactExport, canExportArtifact } from "./export-artifact.js";
+import { buildProjectFontExport } from "./font-build.js";
 import { hasProjectFontExport, projectFontExportFilename, projectFontExportPath } from "./font-export.js";
 import { importProjectOne, importProjectZero } from "./project-zero.js";
 import { generateProjectZeroSpecimens } from "./typeface.js";
@@ -242,6 +243,15 @@ export function createApp(database = openDatabase()) {
         }
 
         return redirect(response, `/projects/${projectId}`);
+      }
+
+      const projectFontBuildMatch = url.pathname.match(/^\/projects\/([^/]+)\/export\/font\/build$/);
+      if (request.method === "POST" && projectFontBuildMatch) {
+        const project = getProjectForUser(database, projectFontBuildMatch[1], user.id);
+        if (!project) return sendHtml(response, renderNotFound({ user }), 404);
+        const context = getProjectContext(database, project.id);
+        await buildProjectFontExport(context.project, context.artifacts);
+        return redirect(response, `/projects/${project.id}?saved=font#generated-assets`);
       }
 
       const projectMatch = url.pathname.match(/^\/projects\/([^/]+)$/);

@@ -34,6 +34,7 @@ At this commit, the repo includes:
 - asset-level comments with optional reference attachments
 - Codex refinement that saves a generated SVG revision as a new artifact
 - SVG mark, SVG font proof, and OpenType test-font downloads for generated glyph assets
+- authenticated font rebuilds that select the latest SVG artifact per glyph for the thin test font
 - a showcase surface that accepts comments and font downloads but blocks Codex refinement until the owner moves the project back to studio
 - focused tests
 - project planning and architecture decision records
@@ -78,7 +79,7 @@ Run tests:
 node --test
 ```
 
-Generate a local OpenType test font from a specimen folder after installing FontForge:
+Generate a local OpenType test font from a specimen folder after installing FontForge. In the app, authenticated studio users can also click `Build test font` or `Rebuild test font`; that path reads the project artifact history and selects the latest available thin SVG for each glyph.
 
 ```sh
 brew install fontforge
@@ -90,7 +91,7 @@ fontforge -script scripts/import_svgs_to_fontforge.py \
   --variant thin
 ```
 
-The app serves `exports/PROJECT_ID/object-type-demo-thin.otf` from `/projects/PROJECT_ID/export/font` when the current user owns the project or when the project is in showcase.
+The app serves `exports/PROJECT_ID/object-type-demo-thin.otf` from `/projects/PROJECT_ID/export/font` when the current user owns the project or when the project is in showcase. The authenticated rebuild route is `POST /projects/PROJECT_ID/export/font/build`.
 
 ## Codex Usage
 
@@ -133,7 +134,8 @@ The app should help the project improve while the user is working on it, not aft
 7. Confirm that guidance and SVG specimens are saved in the project history.
 8. Add comments to generated assets.
 9. Run Codex refinement on a studio asset and review the generated SVG revision.
-10. Download a test font from a studio project or showcased project.
+10. Rebuild the test font from the latest glyph assets.
+11. Download a test font from a studio project or showcased project.
 11. Move selected material into the showcase for feedback.
 
 ## Development Status
