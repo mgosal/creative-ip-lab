@@ -4,7 +4,7 @@ Creative IP Studio is a small local web app for working on early creative produc
 
 This repository contains a runnable Node app plus planning and design artifacts.
 
-The app lets a demo user sign in, create studio projects, add notes and context drops, import Project Zero or Project 1 source material, run project guidance through Codex, generate object-type SVG specimens, collect asset-level comments, and run Codex refinement to create a new SVG revision. The first example project is a typeface created from observations of an everyday object.
+The app lets a demo user sign in, create studio projects, add notes and context drops, import Project Zero or Project 1 source material, run project guidance through Codex, generate object-type SVG specimens, collect asset-level comments, run Codex refinement to create a new SVG revision, and export a test OpenType font for review. The first example project is a typeface created from observations of an everyday object.
 
 ## Repository Contents
 
@@ -15,6 +15,7 @@ The app lets a demo user sign in, create studio projects, add notes and context 
 - `context/`: local working context, ignored by Git
 - `data/`: local SQLite data and source material, ignored by Git
 - `uploads/`: local generated and uploaded files, ignored by Git
+- `exports/`: local generated font files, ignored by Git
 - `src/`: local app server, persistence, auth, Codex MCP/CLI bridge, and SVG generation workflow
 - `test/`: tests for persistence, authorization, Codex guidance, refinement output, showcase rules, and HTTP routes
 
@@ -32,7 +33,8 @@ At this commit, the repo includes:
 - generated metallic SVG specimens for the first identified glyphs
 - asset-level comments with optional reference attachments
 - Codex refinement that saves a generated SVG revision as a new artifact
-- a showcase surface that accepts comments but blocks Codex refinement until the owner moves the project back to studio
+- SVG mark, SVG font proof, and OpenType test-font downloads for generated glyph assets
+- a showcase surface that accepts comments and font downloads but blocks Codex refinement until the owner moves the project back to studio
 - focused tests
 - project planning and architecture decision records
 - an object typeface concept brief
@@ -76,6 +78,20 @@ Run tests:
 node --test
 ```
 
+Generate a local OpenType test font from a specimen folder after installing FontForge:
+
+```sh
+brew install fontforge
+fontforge -script scripts/import_svgs_to_fontforge.py \
+  uploads/PROJECT_ID/specimens \
+  exports/PROJECT_ID/object-type-demo-thin.otf \
+  --family "Object Type Demo" \
+  --style Thin \
+  --variant thin
+```
+
+The app serves `exports/PROJECT_ID/object-type-demo-thin.otf` from `/projects/PROJECT_ID/export/font` when the current user owns the project or when the project is in showcase.
+
 ## Codex Usage
 
 The app calls Codex from the server.
@@ -117,7 +133,8 @@ The app should help the project improve while the user is working on it, not aft
 7. Confirm that guidance and SVG specimens are saved in the project history.
 8. Add comments to generated assets.
 9. Run Codex refinement on a studio asset and review the generated SVG revision.
-10. Move selected material into the showcase for feedback.
+10. Download a test font from a studio project or showcased project.
+11. Move selected material into the showcase for feedback.
 
 ## Development Status
 

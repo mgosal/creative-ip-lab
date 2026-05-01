@@ -480,6 +480,15 @@ textarea {
   margin-top: 6px;
 }
 
+.export-actions {
+  display: grid;
+  gap: 8px;
+  padding: 8px;
+  background: #f7f6f1;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+}
+
 .comment-form {
   display: grid;
   gap: 8px;

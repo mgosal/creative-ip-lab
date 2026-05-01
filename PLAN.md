@@ -39,7 +39,8 @@ The app has two surfaces:
 10. User runs `Refine Artifact` on a studio asset.
 11. Codex returns structured critique plus a generated SVG asset.
 12. The app validates and stores the SVG revision as a new artifact and links it from the source asset timeline.
-13. User can move the project to showcase for feedback. Showcase comments remain available, but Codex refinement is locked until the project returns to studio.
+13. User can download an OpenType test font from studio or from a showcased project.
+14. User can move the project to showcase for feedback. Showcase comments and font downloads remain available, but Codex refinement is locked until the project returns to studio.
 
 ## Codex Actions
 
@@ -105,6 +106,8 @@ SQLite stores:
 - Asset refinements
 - Codex runs
 
+Generated font files are written to `exports/`, which is ignored by Git.
+
 Local source material, generated SVG files, uploaded files, SQLite data, and private context live outside Git through ignore rules.
 
 ## Authorization
@@ -137,6 +140,7 @@ Current tests cover:
 - Guidance continuation route
 - Codex refinement creating a generated artifact
 - Blocking Codex refinement while an owned asset is in showcase
+- Public showcase and authenticated owner font downloads
 
 ## Completed MVP Cut
 
@@ -151,7 +155,8 @@ Current tests cover:
 9. `Guide Project` action with structured output, continuation, live Codex path, and local fallback.
 10. `Refine Artifact` action with Codex-generated SVG revision storage.
 11. Asset comments and optional reference attachments.
-12. Tests for the main persistence, auth, guidance, refinement, and showcase rules.
+12. OpenType test-font export through FontForge-generated files in `exports/`.
+13. Tests for the main persistence, auth, guidance, refinement, showcase rules, and font download routes.
 
 ## Next Implementation Steps
 
@@ -161,7 +166,7 @@ Current tests cover:
 4. Add stronger SVG validation using a parser rather than string checks.
 5. Add explicit version grouping for generated asset revisions.
 6. Add a richer typeface workflow for glyph review, iteration, and approvals.
-7. Add fast review outputs for the typeface path, such as specimen pages, web font previews, or installable font files.
+7. Add web font preview pages and richer specimen sheets around the exported font files.
 8. Add preview and release states beyond the current studio/showcase toggle.
 
 ## Demo Goal
@@ -178,4 +183,5 @@ For the typeface example:
 6. Generate SVG specimens.
 7. Add asset comments.
 8. Run Codex refinement and show the generated SVG revision.
+9. Download the generated test font from the project or showcase.
 9. Move the project to showcase and show the comment-only feedback surface.

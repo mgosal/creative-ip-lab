@@ -1,7 +1,7 @@
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { randomUUID, scryptSync, timingSafeEqual } from "node:crypto";
+import { createHash, randomUUID, scryptSync, timingSafeEqual } from "node:crypto";
 import { config } from "./config.js";
 
 const SCRYPT_KEY_LENGTH = 64;
@@ -45,6 +45,7 @@ function migrate(db) {
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       token_hash TEXT NOT NULL UNIQUE,
+      token_digest TEXT UNIQUE,
       expires_at TEXT NOT NULL,
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
@@ -127,6 +128,12 @@ function migrate(db) {
   `);
 
   try {
+    db.exec("ALTER TABLE sessions ADD COLUMN token_digest TEXT");
+  } catch {}
+  try {
+    db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_sessions_token_digest ON sessions(token_digest)");
+  } catch {}
+  try {
     db.exec("ALTER TABLE artifact_comments ADD COLUMN display_name TEXT");
   } catch {}
   try {
@@ -169,18 +176,37 @@ function feedbackUserId(db) {
 export function createSession(db, userId) {
   const token = randomUUID();
   const tokenHash = hashPassword(token);
+  const tokenDigest = hashSessionToken(token);
   const expiresAt = toSqlDateTime(new Date(Date.now() + 1000 * 60 * 60 * 8));
 
+  db.prepare("DELETE FROM sessions WHERE expires_at <= CURRENT_TIMESTAMP").run();
   db.prepare(`
-    INSERT INTO sessions (id, user_id, token_hash, expires_at)
-    VALUES (?, ?, ?, ?)
-  `).run(randomUUID(), userId, tokenHash, expiresAt);
+    INSERT INTO sessions (id, user_id, token_hash, token_digest, expires_at)
+    VALUES (?, ?, ?, ?, ?)
+  `).run(randomUUID(), userId, tokenHash, tokenDigest, expiresAt);
 
   return token;
 }
 
 export function findUserBySessionToken(db, token) {
   if (!token) return null;
+
+  const tokenDigest = hashSessionToken(token);
+  const direct = db.prepare(`
+    SELECT
+      sessions.id AS session_id,
+      sessions.token_hash,
+      sessions.expires_at,
+      users.id,
+      users.email,
+      users.name
+    FROM sessions
+    JOIN users ON users.id = sessions.user_id
+    WHERE sessions.token_digest = ?
+      AND sessions.expires_at > CURRENT_TIMESTAMP
+  `).get(tokenDigest);
+
+  if (direct) return direct;
 
   const rows = db.prepare(`
     SELECT
@@ -193,9 +219,17 @@ export function findUserBySessionToken(db, token) {
     FROM sessions
     JOIN users ON users.id = sessions.user_id
     WHERE sessions.expires_at > CURRENT_TIMESTAMP
+      AND sessions.token_digest IS NULL
   `).all();
 
-  return rows.find((row) => verifyPassword(token, row.token_hash)) || null;
+  const matched = rows.find((row) => verifyPassword(token, row.token_hash));
+  if (!matched) return null;
+
+  try {
+    db.prepare("UPDATE sessions SET token_digest = ? WHERE id = ?").run(tokenDigest, matched.session_id);
+  } catch {}
+
+  return matched;
 }
 
 export function destroySession(db, token) {
@@ -257,6 +291,13 @@ export function listShowcaseProjects(db) {
     WHERE status = 'showcase'
     ORDER BY updated_at DESC
   `).all();
+}
+
+export function getShowcaseProject(db, projectId) {
+  return db.prepare(`
+    SELECT * FROM projects
+    WHERE id = ? AND status = 'showcase'
+  `).get(projectId);
 }
 
 export function listArtifactsForProject(db, projectId) {
@@ -487,6 +528,10 @@ export function updateProjectStatus(db, projectId, status) {
 
 function touchProject(db, projectId) {
   db.prepare("UPDATE projects SET updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(projectId);
+}
+
+function hashSessionToken(token) {
+  return createHash("sha256").update(token).digest("hex");
 }
 
 function toSqlDateTime(date) {

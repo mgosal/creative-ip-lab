@@ -10,6 +10,7 @@ export const config = {
   port: Number(process.env.PORT || 3000),
   dbPath: process.env.DATABASE_PATH || join(rootDir, "data", "creative-ip-lab.sqlite"),
   uploadDir: process.env.UPLOAD_DIR || join(rootDir, "uploads"),
+  exportDir: process.env.EXPORT_DIR || join(rootDir, "exports"),
   maxUploadBytes: Number(process.env.MAX_UPLOAD_BYTES || 50 * 1024 * 1024),
   demoEmail: process.env.DEMO_EMAIL || "mandip@example.com",
   demoPassword: process.env.DEMO_PASSWORD || "creative-lab",

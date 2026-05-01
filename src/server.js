@@ -15,6 +15,7 @@ import {
   findUserBySessionToken,
   getArtifactCommentAttachment,
   getShowcaseArtifact,
+  getShowcaseProject,
   getArtifactForUser,
   listArtifactCommentsForArtifact,
   listArtifactCommentsForProject,
@@ -31,6 +32,8 @@ import {
   saveCodexRun
 } from "./db.js";
 import { guideProject, refineArtifact } from "./codex.js";
+import { buildArtifactExport, canExportArtifact } from "./export-artifact.js";
+import { hasProjectFontExport, projectFontExportFilename, projectFontExportPath } from "./font-export.js";
 import { importProjectOne, importProjectZero } from "./project-zero.js";
 import { generateProjectZeroSpecimens } from "./typeface.js";
 import { renderArtifactDetail, renderLab, renderLogin, renderNewProject, renderProject, renderShowcase, renderNotFound } from "./views.js";
@@ -39,11 +42,12 @@ export function createApp(database = openDatabase()) {
   return createServer(async (request, response) => {
     try {
       const url = new URL(request.url, `http://${request.headers.host}`);
-      const user = findUserBySessionToken(database, getCookie(request, config.sessionCookie));
 
       if (url.pathname.startsWith("/assets/")) {
         return serveAsset(url.pathname, response);
       }
+
+      const user = findUserBySessionToken(database, getCookie(request, config.sessionCookie));
 
       if (request.method === "GET" && url.pathname === "/") {
         return redirect(response, user ? "/studio" : "/login");
@@ -79,6 +83,7 @@ export function createApp(database = openDatabase()) {
       if (request.method === "GET" && url.pathname === "/showcase") {
         const projects = listShowcaseProjects(database).map((project) => ({
           ...project,
+          fontExportAvailable: hasProjectFontExport(project),
           previews: listArtifactsForProject(database, project.id)
             .filter((artifact) => artifact.kind === "glyph-svg")
             .slice(0, 9),
@@ -98,6 +103,26 @@ export function createApp(database = openDatabase()) {
           : getShowcaseArtifact(database, artifactFileMatch[1]);
         if (!artifact || !artifact.path) return sendHtml(response, renderNotFound({ user }), 404);
         return serveLocalFile(artifact.path, response);
+      }
+
+      const artifactExportMatch = url.pathname.match(/^\/artifacts\/([^/]+)\/export\/(svg|font-svg)$/);
+      if (request.method === "GET" && artifactExportMatch) {
+        const artifact = user
+          ? getArtifactForUser(database, artifactExportMatch[1], user.id) || getShowcaseArtifact(database, artifactExportMatch[1])
+          : getShowcaseArtifact(database, artifactExportMatch[1]);
+        if (!canExportArtifact(artifact)) return sendHtml(response, renderNotFound({ user }), 404);
+
+        const exported = await buildArtifactExport(artifact, artifactExportMatch[2]);
+        if (!exported) return sendHtml(response, renderNotFound({ user }), 404);
+        return sendDownload(response, exported);
+      }
+
+      const projectFontExportMatch = url.pathname.match(/^\/projects\/([^/]+)\/export\/font$/);
+      if (request.method === "GET" && projectFontExportMatch) {
+        const ownedProject = user ? getProjectForUser(database, projectFontExportMatch[1], user.id) : null;
+        const project = ownedProject || getShowcaseProject(database, projectFontExportMatch[1]);
+        if (!project || !hasProjectFontExport(project)) return sendHtml(response, renderNotFound({ user }), 404);
+        return serveDownloadFile(projectFontExportPath(project), projectFontExportFilename(project), response);
       }
 
       const commentFileMatch = url.pathname.match(/^\/comments\/([^/]+)\/file$/);
@@ -154,6 +179,7 @@ export function createApp(database = openDatabase()) {
           refinements: listArtifactRefinementsForArtifact(database, artifact.id),
           canRefine: Boolean(ownedArtifact) && !isOwnedShowcaseAsset,
           refineLockedReason: isOwnedShowcaseAsset ? "Move this project back to studio before refining with Codex." : "",
+          fontExportAvailable: hasProjectFontExport(context.project),
           notice: url.searchParams.get("saved")
         }));
       }
@@ -222,10 +248,12 @@ export function createApp(database = openDatabase()) {
       if (request.method === "GET" && projectMatch) {
         const project = getProjectForUser(database, projectMatch[1], user.id);
         if (!project) return sendHtml(response, renderNotFound({ user }), 404);
+        const context = getProjectContext(database, project.id);
         return sendHtml(response, renderProject({
           user,
           notice: url.searchParams.get("saved"),
-          ...getProjectContext(database, project.id)
+          fontExportAvailable: hasProjectFontExport(context.project),
+          ...context
         }));
       }
 
@@ -329,6 +357,15 @@ function redirect(response, location) {
   response.end();
 }
 
+function sendDownload(response, exported) {
+  response.writeHead(200, {
+    "content-type": exported.contentType,
+    "content-disposition": `attachment; filename="${exported.filename.replaceAll('"', "")}"`,
+    "cache-control": "no-store"
+  });
+  response.end(exported.body);
+}
+
 async function serveAsset(pathname, response) {
   const assetPath = join(rootDir, "public", pathname.replace("/assets/", ""));
   const contentType = {
@@ -347,24 +384,45 @@ async function serveAsset(pathname, response) {
 }
 
 async function serveLocalFile(path, response) {
-  const contentType = {
+  try {
+    const file = await readFile(path);
+    response.writeHead(200, { "content-type": contentTypeForPath(path) });
+    response.end(file);
+  } catch {
+    response.writeHead(404);
+    response.end();
+  }
+}
+
+async function serveDownloadFile(path, filename, response) {
+  try {
+    const file = await readFile(path);
+    response.writeHead(200, {
+      "content-type": contentTypeForPath(path),
+      "content-disposition": `attachment; filename="${filename.replaceAll('"', '')}"`,
+      "cache-control": "no-store"
+    });
+    response.end(file);
+  } catch {
+    response.writeHead(404);
+    response.end();
+  }
+}
+
+function contentTypeForPath(path) {
+  return {
     ".svg": "image/svg+xml; charset=utf-8",
     ".jpg": "image/jpeg",
     ".jpeg": "image/jpeg",
     ".png": "image/png",
     ".webp": "image/webp",
     ".txt": "text/plain; charset=utf-8",
-    ".md": "text/markdown; charset=utf-8"
+    ".md": "text/markdown; charset=utf-8",
+    ".otf": "font/otf",
+    ".ttf": "font/ttf",
+    ".woff": "font/woff",
+    ".woff2": "font/woff2"
   }[extname(path).toLowerCase()] || "application/octet-stream";
-
-  try {
-    const file = await readFile(path);
-    response.writeHead(200, { "content-type": contentType });
-    response.end(file);
-  } catch {
-    response.writeHead(404);
-    response.end();
-  }
 }
 
 async function readForm(request) {

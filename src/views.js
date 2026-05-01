@@ -183,7 +183,7 @@ export function renderNewProject({ user, error }) {
   });
 }
 
-export function renderProject({ user, project, notes, artifacts, artifactComments = [], codexRuns, notice }) {
+export function renderProject({ user, project, notes, artifacts, artifactComments = [], codexRuns, fontExportAvailable = false, notice }) {
   const latestRun = codexRuns[0] ? JSON.parse(codexRuns[0].output_json) : null;
   const glyphArtifacts = artifacts.filter((artifact) => artifact.kind === "glyph-svg");
   const materialArtifacts = artifacts.filter((artifact) => artifact.kind !== "glyph-svg");
@@ -210,10 +210,13 @@ export function renderProject({ user, project, notes, artifacts, artifactComment
             <h1>${escapeHtml(project.title)}</h1>
             <p class="lede">${escapeHtml(project.description || "No description yet.")}</p>
           </div>
-          <form method="post" action="/projects/${project.id}/status">
-            <input type="hidden" name="status" value="${project.status === "showcase" ? "studio" : "showcase"}">
-            <button class="button secondary" type="submit">${project.status === "showcase" ? "Move to studio" : "Move to showcase"}</button>
-          </form>
+          <div class="button-row">
+            ${fontExportAvailable ? `<a class="button secondary" href="/projects/${project.id}/export/font">Download test font</a>` : ""}
+            <form method="post" action="/projects/${project.id}/status">
+              <input type="hidden" name="status" value="${project.status === "showcase" ? "studio" : "showcase"}">
+              <button class="button secondary" type="submit">${project.status === "showcase" ? "Move to studio" : "Move to showcase"}</button>
+            </form>
+          </div>
         </div>
         ${noticeText ? `<p class="notice">${escapeHtml(noticeText)}</p>` : ""}
 
@@ -332,7 +335,7 @@ export function renderShowcase({ user, projects, notice }) {
   });
 }
 
-export function renderArtifactDetail({ user, project, artifact, comments, refinements, canRefine, refineLockedReason = "", notice }) {
+export function renderArtifactDetail({ user, project, artifact, comments, refinements, canRefine, refineLockedReason = "", fontExportAvailable = false, notice }) {
   const noticeText = {
     comment: "Feedback saved.",
     refinement: "Asset refinement saved.",
@@ -366,7 +369,9 @@ export function renderArtifactDetail({ user, project, artifact, comments, refine
               returnTo: "asset",
               allowGuest: !user,
               user,
-              refineLockedReason
+              refineLockedReason,
+              showExport: true,
+              fontDownloadHref: fontExportAvailable ? `/projects/${project.id}/export/font` : ""
             })}
           </aside>
         </div>
@@ -418,6 +423,7 @@ function showcaseProjectCard(project, user) {
       <span class="status showcase">showcase</span>
       <h3>${escapeHtml(project.title)}</h3>
       <p>${escapeHtml(project.description || "No description provided.")}</p>
+      ${project.fontExportAvailable ? `<a class="button secondary compact" href="/projects/${project.id}/export/font">Download test font</a>` : ""}
       ${project.previews?.length ? `<div class="showcase-preview-grid">${project.previews.map((artifact) => showcasePreview(artifact, commentsByArtifact.get(artifact.id) || [], user)).join("")}</div>` : ""}
     </article>
   `;
@@ -466,11 +472,13 @@ function assetReviewControls(artifact, comments, options = {}) {
   const returnTo = options.returnTo || "project";
   const allowGuest = Boolean(options.allowGuest);
   const showGuestName = allowGuest && !options.user;
+  const showExport = Boolean(options.showExport && artifact.kind === "glyph-svg" && artifact.path);
 
   return `
     <div class="asset-review">
       ${comments.length ? `<div class="comment-list">${comments.slice(0, 3).map(commentItem).join("")}</div>` : ""}
       <a class="asset-history-link" href="/artifacts/${artifact.id}">View asset history</a>
+      ${showExport ? exportActions(artifact, options.fontDownloadHref) : ""}
       <form class="comment-form" method="post" action="/artifacts/${artifact.id}/comments" enctype="multipart/form-data">
         <input type="hidden" name="returnTo" value="${escapeHtml(returnTo)}">
         ${showGuestName ? `<input name="name" placeholder="Name, optional">` : ""}
@@ -482,6 +490,16 @@ function assetReviewControls(artifact, comments, options = {}) {
         <button class="button compact" type="submit">Refine with Codex</button>
       </form>` : ""}
       ${!canRefine && options.refineLockedReason ? `<p class="compact-note">${escapeHtml(options.refineLockedReason)}</p>` : ""}
+    </div>
+  `;
+}
+
+function exportActions(artifact, fontDownloadHref = "") {
+  return `
+    <div class="export-actions" aria-label="Export digital asset">
+      <a class="button secondary compact" href="/artifacts/${artifact.id}/export/svg">Export SVG mark</a>
+      <a class="button secondary compact" href="/artifacts/${artifact.id}/export/font-svg">Export N font proof</a>
+      ${fontDownloadHref ? `<a class="button compact" href="${escapeHtml(fontDownloadHref)}">Download test font</a>` : ""}
     </div>
   `;
 }

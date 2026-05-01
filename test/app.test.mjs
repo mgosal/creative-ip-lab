@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, describe, it } from "node:test";
@@ -26,6 +26,7 @@ import { generateProjectZeroSpecimens, identifiedGlyphs } from "../src/typeface.
 const tmpRoot = mkdtempSync(join(tmpdir(), "creative-ip-lab-"));
 const dbPath = join(tmpRoot, "test.sqlite");
 config.uploadDir = join(tmpRoot, "uploads");
+config.exportDir = join(tmpRoot, "exports");
 const db = openDatabase(dbPath);
 
 after(() => {
@@ -239,6 +240,75 @@ describe("http app", () => {
     assert.equal(refinements.length, 1);
     assert.equal(generated.kind, "glyph-svg");
     assert.match(generated.title, /Codex revision/);
+  });
+
+  it("exports a showcase glyph as a usable SVG mark and single-glyph font proof", async () => {
+    const user = findUserByEmail(db, "mandip@example.com");
+    const projectId = createProject(db, user.id, {
+      title: "Export Project",
+      projectType: "typeface",
+      description: "Export a distinctive N"
+    });
+    const glyphPath = join(tmpRoot, "export-n.svg");
+    writeFileSync(glyphPath, `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 260 320"><path d="M74 248 C68 194 70 122 74 72"/><path d="M74 72 C92 104 104 136 124 160 C146 186 164 218 188 248"/><path d="M188 72 C194 126 192 202 188 248"/></svg>`);
+    const artifactId = addArtifactSummary(db, projectId, {
+      kind: "glyph-svg",
+      title: "N / Regular",
+      summary: "A usable N mark",
+      path: glyphPath
+    });
+    updateProjectStatus(db, projectId, "showcase");
+
+    const svgResponse = await fetch(`${baseUrl}/artifacts/${artifactId}/export/svg`);
+    const svg = await svgResponse.text();
+    const fontResponse = await fetch(`${baseUrl}/artifacts/${artifactId}/export/font-svg`);
+    const fontProof = await fontResponse.text();
+
+    assert.equal(svgResponse.status, 200);
+    assert.match(svgResponse.headers.get("content-disposition"), /n-regular-mark\.svg/);
+    assert.match(svg, /<svg/);
+    assert.equal(fontResponse.status, 200);
+    assert.match(fontResponse.headers.get("content-disposition"), /n-regular-single-glyph-font\.svg/);
+    assert.match(fontProof, /<font/);
+    assert.match(fontProof, /unicode="N"/);
+  });
+
+  it("lets showcase visitors and authenticated owners download a project font file", async () => {
+    const user = findUserByEmail(db, "mandip@example.com");
+    const projectId = createProject(db, user.id, {
+      title: "Downloadable Font Project",
+      projectType: "typeface",
+      description: "A public test font"
+    });
+    const fontDir = join(config.exportDir, projectId);
+    mkdirSync(fontDir, { recursive: true });
+    writeFileSync(join(fontDir, "object-type-demo-thin.otf"), "fake otf for route test");
+    updateProjectStatus(db, projectId, "showcase");
+
+    const publicResponse = await fetch(`${baseUrl}/projects/${projectId}/export/font`);
+    const publicBody = await publicResponse.text();
+
+    assert.equal(publicResponse.status, 200);
+    assert.equal(publicResponse.headers.get("content-type"), "font/otf");
+    assert.match(publicResponse.headers.get("content-disposition"), /downloadable-font-project-test-font\.otf/);
+    assert.equal(publicBody, "fake otf for route test");
+
+    const privateProjectId = createProject(db, user.id, {
+      title: "Private Font Project",
+      projectType: "typeface",
+      description: "An authenticated test font"
+    });
+    const privateFontDir = join(config.exportDir, privateProjectId);
+    mkdirSync(privateFontDir, { recursive: true });
+    writeFileSync(join(privateFontDir, "object-type-demo-thin.otf"), "private fake otf");
+    const token = createSession(db, user.id);
+
+    const ownerResponse = await fetch(`${baseUrl}/projects/${privateProjectId}/export/font`, {
+      headers: { cookie: `${config.sessionCookie}=${token}` }
+    });
+
+    assert.equal(ownerResponse.status, 200);
+    assert.match(ownerResponse.headers.get("content-disposition"), /private-font-project-test-font\.otf/);
   });
 
   it("blocks Codex refinement while an owned asset is in the showcase", async () => {
