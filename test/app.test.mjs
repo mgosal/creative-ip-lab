@@ -209,6 +209,32 @@ describe("http app", () => {
     assert.match(context.notes[0].body, /Codex loop response/);
   });
 
+  it("shows uploaded source images in the studio material section", async () => {
+    const user = findUserByEmail(db, "mandip@example.com");
+    const token = createSession(db, user.id);
+    const projectId = createProject(db, user.id, {
+      title: "Image Source Project",
+      projectType: "typeface",
+      description: "Uploaded source images should be visible"
+    });
+    const sourcePath = join(tmpRoot, "source-photo.jpeg");
+    writeFileSync(sourcePath, "not a real jpeg, only route metadata for render test");
+    const artifactId = addArtifactSummary(db, projectId, {
+      kind: "source",
+      title: "IMG_4578.jpeg",
+      summary: "Part of context drop. image/jpeg, 100 bytes.",
+      path: sourcePath
+    });
+
+    const response = await fetch(`${baseUrl}/projects/${projectId}`, {
+      headers: { cookie: `${config.sessionCookie}=${token}` }
+    });
+    const html = await response.text();
+
+    assert.equal(response.status, 200);
+    assert.match(html, new RegExp(`<img class="material-preview"[^>]+/artifacts/${artifactId}/file`));
+  });
+
   it("saves a generated artifact from the Codex refinement pipeline", async () => {
     config.codexProvider = "mock";
     const user = findUserByEmail(db, "mandip@example.com");

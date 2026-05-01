@@ -27,6 +27,7 @@ import csv
 import os
 import re
 import sys
+import tempfile
 from pathlib import Path
 
 
@@ -66,6 +67,7 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--side-bearing", type=int, default=DEFAULT_SIDE_BEARING, help="Left side bearing after scaling.")
     parser.add_argument("--target-height", type=int, default=DEFAULT_TARGET_HEIGHT, help="Target imported outline height.")
     parser.add_argument("--no-fit", action="store_true", help="Skip scaling and positioning after import.")
+    parser.add_argument("--raw-svg", action="store_true", help="Import SVG files as-is instead of stripping specimen backgrounds, labels, filters, and gradients.")
     parser.add_argument("--dry-run", action="store_true", help="Print inferred mappings without writing a font.")
     args = parser.parse_args(argv)
 
@@ -98,6 +100,7 @@ def main(argv: list[str]) -> int:
             side_bearing=args.side_bearing,
             target_height=args.target_height,
             fit=not args.no_fit,
+            clean_svg=not args.raw_svg,
         )
 
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -301,10 +304,24 @@ def import_glyph(
     side_bearing: int,
     target_height: int,
     fit: bool,
+    clean_svg: bool,
 ) -> None:
     glyph = font.createChar(codepoint, glyph_name)
     glyph.clear()
-    glyph.importOutlines(str(svg_path))
+    import_path = svg_path
+    temp_path = None
+    if clean_svg:
+        temp_path = build_font_source_svg(svg_path)
+        import_path = temp_path
+
+    try:
+        glyph.importOutlines(str(import_path))
+    finally:
+        if temp_path:
+            try:
+                temp_path.unlink()
+            except OSError:
+                pass
 
     if fit:
         fit_glyph(glyph, ps_mat, side_bearing=side_bearing, target_height=target_height)
@@ -319,6 +336,44 @@ def import_glyph(
         print(f"Warning: cleanup failed for {svg_path.name}: {exc}", file=sys.stderr)
 
     print(f"Imported {svg_path.name} -> {glyph_name} U+{codepoint:04X}")
+
+
+
+def build_font_source_svg(svg_path: Path) -> Path:
+    """Create a temporary SVG suitable for monochrome font import.
+
+    The app's specimen SVGs are presentation assets. They include backgrounds,
+    labels, gradients, filters, and dashed construction guides. Those are useful
+    in the browser but become real black outlines when FontForge imports them.
+    This pass keeps the glyph geometry and removes specimen-only decoration.
+    """
+    content = svg_path.read_text(encoding="utf-8")
+    content = re.sub(r"<defs\b.*?</defs>", "", content, flags=re.IGNORECASE | re.DOTALL)
+    content = re.sub(r"<text\b.*?</text>", "", content, flags=re.IGNORECASE | re.DOTALL)
+    content = re.sub(r"<rect\b[^>]*/>", "", content, flags=re.IGNORECASE)
+    content = re.sub(
+        r"<(line|path|circle|ellipse|polyline|polygon)\b[^>]*stroke-dasharray=[\"'][^\"']+[\"'][^>]*/>",
+        "",
+        content,
+        flags=re.IGNORECASE,
+    )
+    content = re.sub(r"\sfilter=[\"'][^\"']*[\"']", "", content, flags=re.IGNORECASE)
+    content = re.sub(r"\srole=[\"'][^\"']*[\"']", "", content, flags=re.IGNORECASE)
+    content = re.sub(r"\saria-label=[\"'][^\"']*[\"']", "", content, flags=re.IGNORECASE)
+    content = re.sub(r"\sopacity=[\"'][^\"']*[\"']", "", content, flags=re.IGNORECASE)
+    content = re.sub(r"stroke=[\"']url\([^\"']+\)[\"']", 'stroke="#000000"', content, flags=re.IGNORECASE)
+    content = re.sub(r"fill=[\"']url\([^\"']+\)[\"']", 'fill="#000000"', content, flags=re.IGNORECASE)
+    content = re.sub(r"stroke=[\"']#[0-9a-fA-F]{3,8}[\"']", 'stroke="#000000"', content)
+    content = re.sub(r"fill=[\"']#[0-9a-fA-F]{3,8}[\"']", 'fill="#000000"', content)
+
+    temp = tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".svg", delete=False)
+    try:
+        temp.write(content)
+        temp.write("\n")
+    finally:
+        temp.close()
+
+    return Path(temp.name)
 
 
 def fit_glyph(glyph, ps_mat, side_bearing: int, target_height: int) -> None:

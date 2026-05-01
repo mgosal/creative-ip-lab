@@ -446,7 +446,7 @@ function artifactItem(artifact, comments = [], user, options = {}) {
     <article class="item" id="asset-${artifact.id}">
       <span class="item-kicker">${escapeHtml(artifact.kind)}</span>
       <h3>${escapeHtml(artifact.title)}</h3>
-      ${artifact.kind === "photo" && artifact.path ? `<img class="material-preview" src="/artifacts/${artifact.id}/file" alt="${escapeHtml(artifact.title)}">` : ""}
+      ${isImageArtifact(artifact) ? `<img class="material-preview" loading="lazy" src="/artifacts/${artifact.id}/file" alt="${escapeHtml(artifact.title)}">` : ""}
       <p>${escapeHtml(artifact.summary || "No summary.")}</p>
       ${artifact.path ? `<p class="muted">Stored in local material drop.</p>` : ""}
       <a class="asset-title-link" href="/artifacts/${artifact.id}">View history</a>
@@ -465,6 +465,13 @@ function glyphItem(artifact, comments = [], user, options = {}) {
       ${assetReviewControls(artifact, comments, { user, ...options })}
     </article>
   `;
+}
+
+function isImageArtifact(artifact) {
+  if (!artifact?.path) return false;
+  const path = String(artifact.path).toLowerCase();
+  const summary = String(artifact.summary || "").toLowerCase();
+  return /\.(jpg|jpeg|png|gif|webp)$/.test(path) || summary.includes("image/");
 }
 
 function assetReviewControls(artifact, comments, options = {}) {
