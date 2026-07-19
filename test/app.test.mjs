@@ -294,6 +294,32 @@ describe("http app", () => {
     assert.match(html, new RegExp(`<img class="material-preview"[^>]+/artifacts/${artifactId}/file`));
   });
 
+  it("serves uploaded files with headers that keep SVG scripts inert", async () => {
+    const user = findUserByEmail(db, "mandip@example.com");
+    const token = createSession(db, user.id);
+    const projectId = createProject(db, user.id, {
+      title: "Upload Header Project",
+      projectType: "typeface",
+      description: "Uploaded SVGs must not execute when opened directly"
+    });
+    const svgPath = join(tmpRoot, "uploaded-mark.svg");
+    writeFileSync(svgPath, `<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>`);
+    const artifactId = addArtifactSummary(db, projectId, {
+      kind: "source",
+      title: "uploaded-mark.svg",
+      summary: "Visitor-style upload with an embedded script.",
+      path: svgPath
+    });
+
+    const response = await fetch(`${baseUrl}/artifacts/${artifactId}/file`, {
+      headers: { cookie: `${config.sessionCookie}=${token}` }
+    });
+
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("x-content-type-options"), "nosniff");
+    assert.match(response.headers.get("content-security-policy") || "", /sandbox/);
+  });
+
   it("shows the font build action when a project has glyph artifacts", async () => {
     const user = findUserByEmail(db, "mandip@example.com");
     const token = createSession(db, user.id);
