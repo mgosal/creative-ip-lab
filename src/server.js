@@ -351,8 +351,9 @@ export function createApp(database = openDatabase()) {
 
       return sendHtml(response, renderNotFound({ user }), 404);
     } catch (error) {
+      console.error("[creative-ip-lab] request failed:", error);
       response.writeHead(500, { "content-type": "text/plain; charset=utf-8" });
-      response.end(error.stack || error.message);
+      response.end("Something went wrong. Check the server log for details.");
     }
   });
 }
@@ -396,7 +397,14 @@ async function serveAsset(pathname, response) {
 async function serveLocalFile(path, response) {
   try {
     const file = await readFile(path);
-    response.writeHead(200, { "content-type": contentTypeForPath(path) });
+    response.writeHead(200, {
+      "content-type": contentTypeForPath(path),
+      "x-content-type-options": "nosniff",
+      // Uploaded files (notably SVG) execute scripts when navigated to
+      // directly. The sandbox CSP keeps them inert as documents while <img>
+      // embedding is unaffected.
+      "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; sandbox"
+    });
     response.end(file);
   } catch {
     response.writeHead(404);
@@ -484,7 +492,8 @@ async function readBody(request) {
 }
 
 function parseMultipartForm(body, contentType) {
-  const boundary = contentType.match(/boundary=(?:"([^"]+)"|([^;]+))/)?.[1] || contentType.match(/boundary=(?:"([^"]+)"|([^;]+))/)?.[2];
+  const boundaryMatch = contentType.match(/boundary=(?:"([^"]+)"|([^;]+))/);
+  const boundary = boundaryMatch?.[1] || boundaryMatch?.[2];
   if (!boundary) return { fields: {}, files: [] };
 
   const fields = {};
